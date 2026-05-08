@@ -1,3 +1,11 @@
+#Agent
+.agent/
+.agent/**
+.cursor/
+.cursor/**
+.antigravity/
+.antigravity/**
+
 # Logs
 logs
 *.log
