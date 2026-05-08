@@ -5,6 +5,7 @@ import { useModelStore } from '../stores/modelStore'
 import ChatInput from '../components/chat/ChatInput'
 import MessageBubble from '../components/chat/MessageBubble'
 import ConversationSidebar from '../components/chat/ConversationSidebar'
+import { KURUMI_SYSTEM_PROMPT } from '../constants/systemPrompt'
 
 export default function Chat() {
   const { 
@@ -124,11 +125,14 @@ export default function Chat() {
     clearStreaming()
     setIsStreaming(true) // show loading bubble immediately
 
-    // Format history for Ollama
-    const history = [...currentMessages, userMsg].map(m => ({
-      role: m.role,
-      content: m.content
-    }))
+    // Format history for Ollama, prepended with system prompt
+    const history = [
+      { role: 'system', content: KURUMI_SYSTEM_PROMPT },
+      ...[...currentMessages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content
+      }))
+    ]
 
     // Start streaming
     const unsubscribeChunk = window.electron?.on(`ollama:chat:chunk:${replyId}`, (event, chunk: any) => {
