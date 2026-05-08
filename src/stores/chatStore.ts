@@ -38,6 +38,7 @@ interface ChatState {
   addConversation: (conv: Conversation) => void
   addMessage: (msg: Message) => void
   updateStreamingContent: (content: string, done: boolean) => void
+  setIsStreaming: (val: boolean) => void
   clearStreaming: () => void
   setConversations: (convs: Conversation[]) => void
   setMessages: (convId: string, msgs: Message[]) => void
@@ -70,6 +71,8 @@ export const useChatStore = create<ChatState>((set) => ({
     streamingContent: state.streamingContent + content,
     isStreaming: !done
   })),
+
+  setIsStreaming: (val) => set({ isStreaming: val }),
 
   clearStreaming: () => set({ streamingContent: '', isStreaming: false }),
 

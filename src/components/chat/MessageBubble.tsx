@@ -23,10 +23,19 @@ export default function MessageBubble({ role, content, isStreaming }: MessageBub
           <div className="absolute -left-2 top-0 w-1 h-full bg-red-core opacity-50 rounded-full group-hover:opacity-100 transition-opacity" />
         )}
         
-        <div className="whitespace-pre-wrap font-sans leading-relaxed text-[15px] text-text-primary">
-          {content}
-          {isStreaming && role === 'assistant' && (
-            <span className="inline-block w-2 h-4 ml-1 bg-red-bright animate-[blink_1s_infinite]" />
+        <div className="whitespace-pre-wrap font-sans leading-relaxed text-[15px] text-text-primary min-h-[24px]">
+          {!content && isStreaming ? (
+            <div className="flex items-center gap-2 text-text-secondary italic">
+              <span className="w-2 h-2 rounded-full bg-red-glow animate-ping"></span>
+              Summoning from the void...
+            </div>
+          ) : (
+            <>
+              {content}
+              {isStreaming && role === 'assistant' && (
+                <span className="inline-block w-2 h-4 ml-1 bg-red-bright animate-blink" />
+              )}
+            </>
           )}
         </div>
       </div>

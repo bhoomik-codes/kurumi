@@ -7,7 +7,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n VITE,ELECTRON -c cyan,magenta \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",

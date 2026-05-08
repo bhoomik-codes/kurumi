@@ -8,10 +8,10 @@ export function registerSqliteIpc() {
   })
 
   ipcMain.handle('db:conversations:create', (e, args) => {
-    const { id, title, model, system_prompt, created_at, updated_at, metadata } = args
+    const { id, title, model, systemPrompt, createdAt, updatedAt, metadata } = args
     dbService.run(
       'INSERT INTO conversations (id, title, model, system_prompt, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, title, model, system_prompt, created_at, updated_at, metadata]
+      [id, title, model, systemPrompt, createdAt, updatedAt, metadata]
     )
     return id
   })
@@ -33,10 +33,10 @@ export function registerSqliteIpc() {
   })
 
   ipcMain.handle('db:messages:insert', (e, args) => {
-    const { id, conversation_id, role, content, model, created_at, token_count, generation_ms, attachments, metadata } = args
+    const { id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata } = args
     dbService.run(
       'INSERT INTO messages (id, conversation_id, role, content, model, created_at, token_count, generation_ms, attachments, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, conversation_id, role, content, model, created_at, token_count, generation_ms, attachments, metadata]
+      [id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata]
     )
     return id
   })

@@ -7,19 +7,71 @@ import MessageBubble from '../components/chat/MessageBubble'
 
 export default function Chat() {
   const { 
-    messages, 
+    messages,
+    conversations,
     activeConversationId, 
     isStreaming, 
     streamingContent,
     addMessage, 
     updateStreamingContent, 
     clearStreaming,
+    setIsStreaming,
     setActiveConversation,
-    addConversation
+    addConversation,
+    setConversations,
+    setMessages
   } = useChatStore()
   
-  const { activeModel } = useModelStore()
+  const { activeModel, setActiveModel } = useModelStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Hydrate from DB on first mount
+  useEffect(() => {
+    window.electron?.invoke('db:conversations:list').then((convs: any[]) => {
+      if (convs && convs.length > 0) {
+        // Map snake_case from SQLite to camelCase for the store
+        const mapped = convs.map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          model: c.model,
+          systemPrompt: c.system_prompt,
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
+          pinned: !!c.pinned,
+        }))
+        setConversations(mapped)
+        // Load messages for the most recent conversation
+        const latest = mapped[0]
+        setActiveConversation(latest.id)
+        window.electron?.invoke('db:messages:list', latest.id).then((msgs: any[]) => {
+          if (msgs) {
+            const mappedMsgs = msgs.map((m: any) => ({
+              id: m.id,
+              conversationId: m.conversation_id,
+              role: m.role,
+              content: m.content,
+              model: m.model,
+              createdAt: m.created_at,
+              tokenCount: m.token_count,
+              generationMs: m.generation_ms,
+            }))
+            setMessages(latest.id, mappedMsgs)
+          }
+        })
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    // Auto-select first model
+    if (!activeModel) {
+      window.electron?.invoke('ollama:models').then((models) => {
+        if (models && models.length > 0) {
+          setActiveModel(models[0].name)
+        }
+      })
+    }
+  }, [activeModel])
   
   const currentMessages = activeConversationId ? (messages[activeConversationId] || []) : []
 
@@ -69,6 +121,7 @@ export default function Chat() {
     // Setup assistant reply
     const replyId = uuidv4()
     clearStreaming()
+    setIsStreaming(true) // show loading bubble immediately
 
     // Format history for Ollama
     const history = [...currentMessages, userMsg].map(m => ({
@@ -106,7 +159,7 @@ export default function Chat() {
       if (unsubscribeDone) unsubscribeDone()
     })
 
-    window.electron?.invoke('ollama:chat:stream', {
+    window.electron?.send('ollama:chat:stream', {
       messages: history,
       model: activeModel,
       options: {},
@@ -115,7 +168,7 @@ export default function Chat() {
   }
 
   const handleAbort = () => {
-    window.electron?.invoke('ollama:chat:abort')
+    window.electron?.send('ollama:chat:abort')
     clearStreaming()
     // Ideally, we'd still save whatever we generated so far here
   }

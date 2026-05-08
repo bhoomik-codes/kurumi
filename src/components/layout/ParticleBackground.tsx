@@ -17,14 +17,14 @@ export default function ParticleBackground() {
     // Particles
     const particles: { x: number, y: number, radius: number, speedX: number, speedY: number, alpha: number }[] = []
     
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 75; i++) {
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        radius: Math.random() * 2 + 0.5,
-        speedX: (Math.random() - 0.5) * 0.3,
-        speedY: (Math.random() - 0.5) * 0.3 - 0.2, // Drift upwards slightly
-        alpha: Math.random() * 0.5 + 0.1
+        radius: Math.random() * 2.5 + 1,
+        speedX: (Math.random() - 0.5) * 0.4,
+        speedY: (Math.random() - 0.5) * 0.4 - 0.3, // Drift upwards slightly
+        alpha: Math.random() * 0.6 + 0.3
       })
     }
 

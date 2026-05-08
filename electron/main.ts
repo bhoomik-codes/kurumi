@@ -29,10 +29,15 @@ async function createWindow() {
 
   // CSP
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const isDev = !!process.env.VITE_DEV_SERVER_URL
+    const csp = isDev 
+      ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: ws:; script-src 'self' 'unsafe-eval' 'unsafe-inline' http:; connect-src 'self' http://localhost:* ws://localhost:*;"
+      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
+
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"],
+        'Content-Security-Policy': [csp],
       },
     })
   })
@@ -82,12 +87,4 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized())
 
-// Startup Ollama Check mock (To be moved to a service later)
-ipcMain.handle('ollama:status', async () => {
-  try {
-    const res = await fetch('http://localhost:11434/')
-    return res.ok
-  } catch (e) {
-    return false
-  }
-})
+

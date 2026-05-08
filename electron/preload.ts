@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 
 contextBridge.exposeInMainWorld('electron', {
   invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  send: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),
   on: (channel: string, callback: (event: IpcRendererEvent, ...args: any[]) => void) => {
     const subscription = (event: IpcRendererEvent, ...args: any[]) => callback(event, ...args)
     ipcRenderer.on(channel, subscription)
