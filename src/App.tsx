@@ -36,6 +36,6 @@ export default function App() {
         </div>
         <StatusBar />
       </div>
-    </>
+    </Router>
   )
 }

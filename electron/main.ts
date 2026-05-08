@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { registerSqliteIpc } from './ipc/sqlite.ipc'
+import { registerOllamaIpc } from './ipc/ollama.ipc'
 
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
@@ -54,6 +55,7 @@ async function createWindow() {
 app.whenReady().then(() => {
   createWindow()
   registerSqliteIpc()
+  registerOllamaIpc()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
