@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-void:        #050305;
+    --bg-abyss:       #0A0508;
+    --bg-dark:        #110810;
+    --bg-glass:       rgba(18, 6, 14, 0.72);
+    --bg-glass-hover: rgba(28, 10, 22, 0.85);
+
+    --red-core:       #8B0000;
+    --red-bright:     #C41E3A;
+    --red-glow:       #FF2244;
+    --red-muted:      #5C1A2A;
+    --red-vein:       #991B1B;
+
+    --purple-deep:    #1A0A2E;
+    --purple-mid:     #4B0082;
+    --purple-glow:    #7B2FBE;
+
+    --text-primary:   #F5E6E8;
+    --text-secondary: #B09098;
+    --text-dim:       #6B4A52;
+    --text-accent:    #FF6B7A;
+
+    --border-vein:    rgba(139, 0, 0, 0.4);
+    --border-glass:   rgba(196, 30, 58, 0.2);
+    
+    --glow-red:       0 0 20px rgba(255, 34, 68, 0.3), 0 0 60px rgba(139, 0, 0, 0.15);
+    --glow-subtle:    0 0 10px rgba(255, 34, 68, 0.15);
+
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--bg-void);
+    color: var(--text-primary);
+    font-family: 'Nunito', sans-serif;
+    overflow: hidden; /* App shell handles overflow */
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--red-muted);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--red-bright);
+  }
+}
+
+@layer utilities {
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag-region {
+    -webkit-app-region: no-drag;
+  }
+}

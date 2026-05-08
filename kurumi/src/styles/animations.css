@@ -1,0 +1,42 @@
+/* Cursed energy shimmer across glass panels */
+@keyframes cursedShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Glow pulse for active elements */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(255,34,68,0.3); }
+  50%      { box-shadow: 0 0 25px rgba(255,34,68,0.6), 0 0 50px rgba(139,0,0,0.3); }
+}
+
+/* Vein crawl: red line that traces border */
+@keyframes veinCrawl {
+  0%   { stroke-dashoffset: 1000; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Floating particle */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.4; }
+  33%      { transform: translateY(-20px) translateX(10px); opacity: 0.7; }
+  66%      { transform: translateY(10px) translateX(-8px); opacity: 0.3; }
+}
+
+/* Streaming cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* Page transition */
+@keyframes pageReveal {
+  from { opacity: 0; transform: translateY(12px); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+/* Model card hover blood fill */
+@keyframes bloodFill {
+  from { background-size: 0% 100%; }
+  to   { background-size: 100% 100%; }
+}
