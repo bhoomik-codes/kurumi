@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useChatStore, Message } from '../stores/chatStore'
 import { useModelStore } from '../stores/modelStore'
 import ChatInput from '../components/chat/ChatInput'
 import MessageBubble from '../components/chat/MessageBubble'
+import ConversationSidebar from '../components/chat/ConversationSidebar'
 
 export default function Chat() {
   const { 
@@ -174,42 +175,51 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-void/50">
-      {/* Header */}
-      <div className="h-14 border-b border-border-glass glass-deep flex items-center px-6">
-        <h1 className="font-display-dec text-lg text-text-primary tracking-wide">
-          {activeModel || 'Select a Model'}
-        </h1>
-      </div>
+    <div className="flex h-full">
+      {/* Conversation Sidebar */}
+      <ConversationSidebar />
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-        {currentMessages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-text-dim text-lg font-display">
-            The void awaits your query...
-          </div>
-        ) : (
-          <div className="max-w-4xl mx-auto">
-            {currentMessages.map(msg => (
-              <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
-            ))}
-            
-            {isStreaming && (
-              <MessageBubble role="assistant" content={streamingContent} isStreaming />
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
+      {/* Main Chat Area */}
+      <div className="flex flex-col flex-1 bg-void/50 min-w-0">
+        {/* Header */}
+        <div className="h-12 border-b border-border-glass glass-deep flex items-center px-5 flex-shrink-0">
+          <h1 className="font-display text-sm text-text-primary tracking-wide truncate">
+            {activeModel || 'Select a Model'}
+          </h1>
+        </div>
 
-      {/* Input */}
-      <div className="p-4 max-w-4xl mx-auto w-full">
-        <ChatInput 
-          onSendMessage={handleSendMessage} 
-          onAbort={handleAbort} 
-          isStreaming={isStreaming} 
-          disabled={!activeModel}
-        />
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+          {currentMessages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-text-dim gap-3">
+              <div className="text-4xl opacity-30">🩸</div>
+              <p className="text-lg font-display">The void awaits your query...</p>
+              {!activeConversationId && (
+                <p className="text-xs opacity-50">Start a new conversation or select one from the sidebar</p>
+              )}
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto">
+              {currentMessages.map(msg => (
+                <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
+              ))}
+              {isStreaming && (
+                <MessageBubble role="assistant" content={streamingContent} isStreaming />
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="p-4 max-w-3xl mx-auto w-full flex-shrink-0">
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            onAbort={handleAbort}
+            isStreaming={isStreaming}
+            disabled={!activeModel}
+          />
+        </div>
       </div>
     </div>
   )
