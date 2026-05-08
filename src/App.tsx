@@ -5,6 +5,7 @@ import StatusBar from './components/layout/StatusBar'
 import ParticleBackground from './components/layout/ParticleBackground'
 import Chat from './pages/Chat'
 import Models from './pages/Models'
+import ModelStore from './pages/ModelStore'
 import Documents from './pages/Documents'
 import ImageGen from './pages/ImageGen'
 import Settings from './pages/Settings'
@@ -25,6 +26,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Chat />} />
             <Route path="/models" element={<Models />} />
+            <Route path="/store" element={<ModelStore />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/image-gen" element={<ImageGen />} />
             <Route path="/settings" element={<Settings />} />

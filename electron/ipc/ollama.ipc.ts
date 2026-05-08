@@ -36,14 +36,53 @@ export function registerOllamaIpc() {
     }
   })
 
-  ipcMain.handle('ollama:pull', async (event, modelName: string) => {
-    const response = await fetch(`${ollamaService.baseUrl}/api/pull`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: modelName, stream: false })
-    })
-    if (!response.ok) throw new Error(`Pull failed: ${response.statusText}`)
-    return await response.json()
+  ipcMain.on('ollama:pull:start', async (event, modelName: string) => {
+    try {
+      const response = await fetch(`${ollamaService.baseUrl}/api/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: modelName, stream: true })
+      })
+
+      if (!response.ok || !response.body) {
+        event.sender.send('ollama:pull:error', `HTTP ${response.status}: ${response.statusText}`)
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (event.sender.isDestroyed()) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter(Boolean)
+
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line)
+            // data: { status, digest, total, completed }
+            const percent = data.total && data.completed
+              ? Math.round((data.completed / data.total) * 100)
+              : null
+            event.sender.send('ollama:pull:progress', {
+              status: data.status,
+              percent,
+              total: data.total,
+              completed: data.completed,
+            })
+          } catch { /* skip malformed lines */ }
+        }
+      }
+
+      event.sender.send('ollama:pull:done')
+    } catch (err: any) {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('ollama:pull:error', err.message)
+      }
+    }
   })
 
   ipcMain.handle('ollama:delete', async (event, modelName: string) => {

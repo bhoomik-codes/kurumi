@@ -121,6 +121,7 @@ export default function Models() {
   const [pullModelName, setPullModelName] = useState('')
   const [isPulling, setIsPulling] = useState(false)
   const [pullStatus, setPullStatus] = useState('')
+  const [pullPercent, setPullPercent] = useState<number | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const fetchModels = async () => {
@@ -135,21 +136,42 @@ export default function Models() {
 
   useEffect(() => { fetchModels() }, [])
 
-  const handlePull = async () => {
-    if (!pullModelName.trim()) return
+  const handlePull = () => {
+    if (!pullModelName.trim() || isPulling) return
     setIsPulling(true)
-    setPullStatus('Initiating download...')
-    try {
-      await window.electron?.invoke('ollama:pull', pullModelName.trim())
-      setPullStatus('Model pulled successfully!')
+    setPullPercent(null)
+    setPullStatus('Connecting to Ollama...')
+
+    const unsubProgress = window.electron?.on('ollama:pull:progress', (_, data) => {
+      setPullStatus(data.status || 'Downloading...')
+      if (data.percent !== null && data.percent !== undefined) {
+        setPullPercent(data.percent)
+      }
+    })
+
+    const unsubDone = window.electron?.on('ollama:pull:done', async () => {
+      setPullStatus('✓ Model pulled successfully!')
+      setPullPercent(100)
       setPullModelName('')
       await fetchModels()
-    } catch (e: any) {
-      setPullStatus(`Error: ${e.message}`)
-    } finally {
       setIsPulling(false)
-      setTimeout(() => setPullStatus(''), 4000)
-    }
+      setTimeout(() => { setPullStatus(''); setPullPercent(null) }, 4000)
+      if (unsubProgress) unsubProgress()
+      if (unsubDone) unsubDone()
+      if (unsubError) unsubError()
+    })
+
+    const unsubError = window.electron?.on('ollama:pull:error', (_, errMsg) => {
+      setPullStatus(`Error: ${errMsg}`)
+      setIsPulling(false)
+      setPullPercent(null)
+      setTimeout(() => setPullStatus(''), 5000)
+      if (unsubProgress) unsubProgress()
+      if (unsubDone) unsubDone()
+      if (unsubError) unsubError()
+    })
+
+    window.electron?.send('ollama:pull:start', pullModelName.trim())
   }
 
   const handleDelete = async (modelName: string) => {
@@ -205,9 +227,28 @@ export default function Models() {
               </button>
             </div>
             {pullStatus && (
-              <p className={`mt-2 text-xs ${pullStatus.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-                {pullStatus}
-              </p>
+              <div className="mt-3 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <p className={`text-xs ${pullStatus.startsWith('Error') ? 'text-red-400' : pullStatus.startsWith('✓') ? 'text-green-400' : 'text-text-secondary'}`}>
+                    {pullStatus}
+                  </p>
+                  {pullPercent !== null && (
+                    <span className="text-xs text-text-dim tabular-nums">{pullPercent}%</span>
+                  )}
+                </div>
+                {isPulling && (
+                  <div className="w-full h-1.5 bg-abyss rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-red-core to-red-bright rounded-full transition-all duration-300"
+                      style={{ width: pullPercent !== null ? `${pullPercent}%` : '100%' }}
+                    >
+                      {pullPercent === null && (
+                        <div className="h-full w-1/3 bg-red-glow/60 animate-pulse rounded-full" />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

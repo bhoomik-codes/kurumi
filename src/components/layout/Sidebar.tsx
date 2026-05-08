@@ -1,11 +1,12 @@
 import React from 'react'
-import { MessageSquare, Box, FileText, Image as ImageIcon, Settings, Activity } from 'lucide-react'
+import { MessageSquare, Box, FileText, Image as ImageIcon, Settings, Activity, ShoppingBag } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 export default function Sidebar() {
   const navItems = [
     { icon: <MessageSquare size={20} />, label: 'Chat', path: '/' },
     { icon: <Box size={20} />, label: 'Models', path: '/models' },
+    { icon: <ShoppingBag size={20} />, label: 'Model Store', path: '/store' },
     { icon: <FileText size={20} />, label: 'Documents', path: '/documents' },
     { icon: <ImageIcon size={20} />, label: 'Image Gen', path: '/image-gen' },
   ]
