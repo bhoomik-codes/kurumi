@@ -1,5 +1,5 @@
 export class OllamaService {
-  private baseUrl = 'http://localhost:11434'
+  public baseUrl = 'http://localhost:11434'
   private abortController: AbortController | null = null
 
   async checkStatus(): Promise<boolean> {

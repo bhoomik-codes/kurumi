@@ -36,7 +36,28 @@ export function registerOllamaIpc() {
     }
   })
 
+  ipcMain.handle('ollama:pull', async (event, modelName: string) => {
+    const response = await fetch(`${ollamaService.baseUrl}/api/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: modelName, stream: false })
+    })
+    if (!response.ok) throw new Error(`Pull failed: ${response.statusText}`)
+    return await response.json()
+  })
+
+  ipcMain.handle('ollama:delete', async (event, modelName: string) => {
+    const response = await fetch(`${ollamaService.baseUrl}/api/delete`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: modelName })
+    })
+    if (!response.ok) throw new Error(`Delete failed: ${response.statusText}`)
+    return true
+  })
+
   ipcMain.on('ollama:chat:abort', () => {
     ollamaService.abortCurrentStream()
   })
 }
+
