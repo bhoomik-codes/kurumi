@@ -5,7 +5,6 @@ import pdfParse from 'pdf-parse'
 import mammoth from 'mammoth'
 import * as xlsx from 'xlsx'
 import { dbService } from './DatabaseService'
-import ollama from 'ollama'
 
 class DocumentService {
   // Configurable embedding model. Ensure this matches what you have in Ollama.
@@ -23,6 +22,22 @@ class DocumentService {
     }
     if (normA === 0 || normB === 0) return 0
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
+  }
+
+  // Generate embedding via HTTP directly to avoid package issues
+  private async getEmbedding(prompt: string): Promise<number[]> {
+    const response = await fetch('http://localhost:11434/api/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: this.embeddingModel, prompt })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Ollama embedding failed: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    return data.embedding
   }
 
   // Basic chunking: split by paragraphs, then ensure max chunk length
@@ -95,11 +110,10 @@ class DocumentService {
       // 3. Chunk text
       const chunks = this.chunkText(text)
 
-      // 4. Generate embeddings and save via Ollama
+      // 4. Generate embeddings and save
       let i = 0
       for (const chunk of chunks) {
-        const response = await ollama.embeddings({ model: this.embeddingModel, prompt: chunk })
-        const embeddingArray = response.embedding
+        const embeddingArray = await this.getEmbedding(chunk)
         const embeddingString = JSON.stringify(embeddingArray)
 
         dbService.run(
@@ -132,9 +146,8 @@ class DocumentService {
   public async searchSimilar(query: string, limit: number = 3) {
     console.log(`Searching for: ${query}`)
 
-    // Get embedding via Ollama
-    const response = await ollama.embeddings({ model: this.embeddingModel, prompt: query })
-    const queryEmbedding = response.embedding
+    // Get embedding via HTTP
+    const queryEmbedding = await this.getEmbedding(query)
 
     // Fetch all chunks at once. Using .iterate() with await inside the loop is unsafe in better-sqlite3 
     // because it keeps the DB statement open across event loop ticks, which can cause silent hangs.
