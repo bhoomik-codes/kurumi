@@ -1,7 +1,18 @@
 import { ipcMain } from 'electron'
 import { documentService } from '../services/DocumentService'
+import { dbService } from '../services/DatabaseService'
 
 export function registerRagIpc() {
+  // Fast COUNT check — avoids embedding the query when no documents are indexed
+  ipcMain.handle('docs:hasChunks', () => {
+    try {
+      const row = dbService.get(`SELECT COUNT(*) as count FROM document_chunks`) as { count: number }
+      return row.count > 0
+    } catch {
+      return false
+    }
+  })
+
   ipcMain.handle('docs:process', async (_, { docId, filePath, filename, mimetype, sizeBytes }) => {
     try {
       return await documentService.processDocument(docId, filePath, filename, mimetype, sizeBytes)
