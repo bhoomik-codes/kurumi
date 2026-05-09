@@ -128,6 +128,10 @@ class DatabaseService {
   public all(sql: string, params: any[] = []) {
     return this.db.prepare(sql).all(params)
   }
+
+  public iterate(sql: string, params: any[] = []) {
+    return this.db.prepare(sql).iterate(params)
+  }
 }
 
 export const dbService = new DatabaseService()

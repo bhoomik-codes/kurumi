@@ -5,26 +5,11 @@ import pdfParse from 'pdf-parse'
 import mammoth from 'mammoth'
 import * as xlsx from 'xlsx'
 import { dbService } from './DatabaseService'
-import { pipeline, env } from '@xenova/transformers'
-
-// Disable local models for transformers to avoid path issues, let it download from HF
-env.allowLocalModels = false
-env.useBrowserCache = false
+import ollama from 'ollama'
 
 class DocumentService {
-  private extractor: any = null
-
-  // Lazy load the embedding model to save memory until needed
-  private async getExtractor() {
-    if (!this.extractor) {
-      console.log('Loading embedding model (Xenova/all-MiniLM-L6-v2)...')
-      this.extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        quantized: true, // Use quantized for speed and smaller memory
-      })
-      console.log('Embedding model loaded.')
-    }
-    return this.extractor
-  }
+  // Configurable embedding model. Ensure this matches what you have in Ollama.
+  private embeddingModel = 'qwen3' // 'nomic-embed-text' or 'qwen3'
 
   // Calculate cosine similarity
   private cosineSimilarity(vecA: number[], vecB: number[]) {
@@ -44,7 +29,7 @@ class DocumentService {
   private chunkText(text: string, maxTokens = 500): string[] {
     const chunks: string[] = []
     const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0)
-    
+
     let currentChunk = ''
     for (const p of paragraphs) {
       // Rough approximation: 1 token = 4 chars
@@ -96,7 +81,7 @@ class DocumentService {
 
   public async processDocument(docId: string, filePath: string, filename: string, mimetype: string, sizeBytes: number) {
     console.log(`Processing document: ${filename}`)
-    
+
     // 1. Save metadata
     dbService.run(
       `INSERT INTO documents (id, filename, filepath, mimetype, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'processing')`,
@@ -106,19 +91,15 @@ class DocumentService {
     try {
       // 2. Parse text
       const text = await this.parseFile(filePath)
-      
+
       // 3. Chunk text
       const chunks = this.chunkText(text)
-      
-      // 4. Generate embeddings and save
-      const extractor = await this.getExtractor()
-      
+
+      // 4. Generate embeddings and save via Ollama
       let i = 0
       for (const chunk of chunks) {
-        // Run model
-        const output = await extractor(chunk, { pooling: 'mean', normalize: true })
-        // output.data is Float32Array
-        const embeddingArray = Array.from(output.data)
+        const response = await ollama.embeddings({ model: this.embeddingModel, prompt: chunk })
+        const embeddingArray = response.embedding
         const embeddingString = JSON.stringify(embeddingArray)
 
         dbService.run(
@@ -126,6 +107,11 @@ class DocumentService {
           [uuidv4(), docId, chunk, embeddingString, i]
         )
         i++
+
+        // Yield to the event loop every 5 chunks to prevent "Not Responding" freeze
+        if (i % 5 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
       }
 
       // 5. Update status
@@ -145,23 +131,34 @@ class DocumentService {
 
   public async searchSimilar(query: string, limit: number = 3) {
     console.log(`Searching for: ${query}`)
-    const extractor = await this.getExtractor()
-    const queryOutput = await extractor(query, { pooling: 'mean', normalize: true })
-    const queryEmbedding = Array.from(queryOutput.data) as number[]
 
-    // Fetch all chunks (this is brute force, but very fast for personal local usage with <10k chunks)
+    // Get embedding via Ollama
+    const response = await ollama.embeddings({ model: this.embeddingModel, prompt: query })
+    const queryEmbedding = response.embedding
+
+    // Fetch all chunks at once. Using .iterate() with await inside the loop is unsafe in better-sqlite3 
+    // because it keeps the DB statement open across event loop ticks, which can cause silent hangs.
     const allChunks = dbService.all(`SELECT id, document_id, content, embedding FROM document_chunks`) as any[]
-    
-    const scoredChunks = allChunks.map(chunk => {
+
+    const scoredChunks: any[] = []
+    let index = 0
+    for (const chunk of allChunks) {
       const dbEmbedding = JSON.parse(chunk.embedding)
       const score = this.cosineSimilarity(queryEmbedding, dbEmbedding)
-      return {
+      scoredChunks.push({
         id: chunk.id,
         document_id: chunk.document_id,
         content: chunk.content,
         score
+      })
+
+      index++
+      // Yield to the event loop every 500 chunks to prevent UI freezing
+      // We use setImmediate which is much faster than setTimeout(0)
+      if (index % 500 === 0) {
+        await new Promise(resolve => setImmediate(resolve))
       }
-    })
+    }
 
     // Sort by descending score
     scoredChunks.sort((a, b) => b.score - a.score)
