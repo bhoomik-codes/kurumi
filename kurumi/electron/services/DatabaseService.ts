@@ -57,6 +57,14 @@ class DatabaseService {
         metadata    TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS document_chunks (
+        id          TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        content     TEXT NOT NULL,
+        embedding   TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS prompts (
         id          TEXT PRIMARY KEY,
         title       TEXT NOT NULL,

@@ -125,9 +125,26 @@ export default function Chat() {
     clearStreaming()
     setIsStreaming(true) // show loading bubble immediately
 
+    // Perform Vector Search (RAG)
+    let systemPromptWithContext = KURUMI_SYSTEM_PROMPT
+    try {
+      // Only search if it's a reasonably sized query, or just search every time
+      const relevantChunks = await window.electron?.invoke('docs:search', content, 3)
+      if (relevantChunks && relevantChunks.length > 0) {
+        // If similarity score is high enough (e.g. > 0.3)
+        const goodChunks = relevantChunks.filter((c: any) => c.score > 0.3)
+        if (goodChunks.length > 0) {
+          const contextText = goodChunks.map((c: any) => c.content).join('\n\n---\n\n')
+          systemPromptWithContext += `\n\n**DOCUMENT CONTEXT:**\nThe user has uploaded documents to their local knowledge base. Here is relevant context extracted from those documents based on their query:\n\n${contextText}\n\nUse this context to answer the user's question if it is relevant. If the context does not contain the answer, say so.`
+        }
+      }
+    } catch (err) {
+      console.error('Vector search failed:', err)
+    }
+
     // Format history for Ollama, prepended with system prompt
     const history = [
-      { role: 'system', content: KURUMI_SYSTEM_PROMPT },
+      { role: 'system', content: systemPromptWithContext },
       ...[...currentMessages, userMsg].map(m => ({
         role: m.role,
         content: m.content
