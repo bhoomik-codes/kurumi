@@ -99,7 +99,7 @@ class DocumentService {
     
     // 1. Save metadata
     dbService.run(
-      \`INSERT INTO documents (id, filename, filepath, mimetype, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'processing')\`,
+      `INSERT INTO documents (id, filename, filepath, mimetype, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'processing')`,
       [docId, filename, filePath, mimetype, sizeBytes]
     )
 
@@ -122,7 +122,7 @@ class DocumentService {
         const embeddingString = JSON.stringify(embeddingArray)
 
         dbService.run(
-          \`INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index) VALUES (?, ?, ?, ?, ?)\`,
+          `INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index) VALUES (?, ?, ?, ?, ?)`,
           [uuidv4(), docId, chunk, embeddingString, i]
         )
         i++
@@ -130,7 +130,7 @@ class DocumentService {
 
       // 5. Update status
       dbService.run(
-        \`UPDATE documents SET chunk_count = ?, status = 'indexed', indexed_at = ? WHERE id = ?\`,
+        `UPDATE documents SET chunk_count = ?, status = 'indexed', indexed_at = ? WHERE id = ?`,
         [chunks.length, Date.now(), docId]
       )
 
@@ -138,7 +138,7 @@ class DocumentService {
       return { success: true, chunks: chunks.length }
 
     } catch (error: any) {
-      dbService.run(\`UPDATE documents SET status = 'error', metadata = ? WHERE id = ?\`, [JSON.stringify({ error: error.message }), docId])
+      dbService.run(`UPDATE documents SET status = 'error', metadata = ? WHERE id = ?`, [JSON.stringify({ error: error.message }), docId])
       throw error
     }
   }
@@ -150,7 +150,7 @@ class DocumentService {
     const queryEmbedding = Array.from(queryOutput.data) as number[]
 
     // Fetch all chunks (this is brute force, but very fast for personal local usage with <10k chunks)
-    const allChunks = dbService.all(\`SELECT id, document_id, content, embedding FROM document_chunks\`) as any[]
+    const allChunks = dbService.all(`SELECT id, document_id, content, embedding FROM document_chunks`) as any[]
     
     const scoredChunks = allChunks.map(chunk => {
       const dbEmbedding = JSON.parse(chunk.embedding)
@@ -171,11 +171,11 @@ class DocumentService {
   }
 
   public getDocuments() {
-    return dbService.all(\`SELECT * FROM documents ORDER BY indexed_at DESC\`)
+    return dbService.all(`SELECT * FROM documents ORDER BY indexed_at DESC`)
   }
 
   public deleteDocument(docId: string) {
-    dbService.run(\`DELETE FROM documents WHERE id = ?\`, [docId])
+    dbService.run(`DELETE FROM documents WHERE id = ?`, [docId])
     return { success: true }
   }
 }
