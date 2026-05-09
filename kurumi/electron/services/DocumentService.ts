@@ -9,7 +9,7 @@ import { dbService } from './DatabaseService'
 // ────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ────────────────────────────────────────────────────────────────────────────
-const EMBEDDING_MODEL = 'qwen3-embedding:latest'
+const EMBEDDING_MODEL = 'nomic-embed-text'
 const OLLAMA_BASE_URL = 'http://localhost:11434'
 const CHUNK_CHARS = 1800     // ≈ 450 tokens at ~4 chars/token
 const CHUNK_OVERLAP = 200    // Overlap between consecutive chunks for context continuity
