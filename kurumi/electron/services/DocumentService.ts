@@ -8,7 +8,7 @@ import { dbService } from './DatabaseService'
 
 class DocumentService {
   // Configurable embedding model. Ensure this matches what you have in Ollama.
-  private embeddingModel = 'qwen3' // 'nomic-embed-text' or 'qwen3'
+  private embeddingModel = 'qwen3-embedding:latest'
 
   // Calculate cosine similarity
   private cosineSimilarity(vecA: number[], vecB: number[]) {
