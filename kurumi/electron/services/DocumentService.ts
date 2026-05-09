@@ -21,7 +21,11 @@ async function getEmbedding(text: string): Promise<number[]> {
   const response = await fetch(`${OLLAMA_BASE_URL}/api/embeddings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: EMBEDDING_MODEL, prompt: text })
+    body: JSON.stringify({ model: EMBEDDING_MODEL, prompt: text }),
+    // qwen3-embedding:latest is a 7.6B model — on CPU each chunk can take 30-120s.
+    // Node's default undici headers timeout is 30s which is far too short.
+    // We set 10 minutes to safely cover even the slowest hardware.
+    signal: AbortSignal.timeout(600_000)
   })
 
   if (!response.ok) {
