@@ -3,7 +3,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useModelStore } from '../stores/modelStore'
 import {
   Settings2, Cpu, Brain, Database, Sliders,
-  RotateCcw, Check, Server, RefreshCw, Zap
+  RotateCcw, Check, Server, RefreshCw, Zap, KeyRound, ShieldCheck, AlertTriangle
 } from 'lucide-react'
 
 // ─── Reusable slider row ────────────────────────────────────────────────────
@@ -63,12 +63,15 @@ export default function Settings() {
   const {
     defaultModel, modelParams, ragChunkSize, ragChunkOverlap,
     ragTopK, ragMinScore, ragEmbeddingModel, ollamaUrl,
-    loadFromDB, setSetting,
+    nvidiaApiKey, loadFromDB, setSetting,
   } = useSettingsStore()
 
   const { availableModels, setAvailableModels } = useModelStore()
   const [saved, setSaved] = useState(false)
   const [ollamaUrlInput, setOllamaUrlInput] = useState(ollamaUrl)
+  const [nvKeyInput, setNvKeyInput] = useState(nvidiaApiKey)
+  const [nvKeyStatus, setNvKeyStatus] = useState<'idle'|'checking'|'ok'|'error'>('idle')
+  const [nvKeyError, setNvKeyError] = useState('')
 
   useEffect(() => {
     loadFromDB()
@@ -93,6 +96,21 @@ export default function Settings() {
     const next = { ...modelParams, [key]: value }
     setSetting('modelParams', next)
     flash()
+  }
+
+  const verifyNvidiaKey = async () => {
+    if (!nvKeyInput.trim()) return
+    setNvKeyStatus('checking')
+    setNvKeyError('')
+    const result = await window.electron?.invoke('nvidia:check', nvKeyInput.trim())
+    if (result?.ok) {
+      setNvKeyStatus('ok')
+      setSetting('nvidiaApiKey', nvKeyInput.trim())
+      flash()
+    } else {
+      setNvKeyStatus('error')
+      setNvKeyError(result?.error ?? 'Unknown error')
+    }
   }
 
   return (
@@ -244,7 +262,47 @@ export default function Settings() {
             />
           </Section>
 
-          {/* ── Connection ────────────────────────────────────────────────── */}
+          {/* ── NVIDIA AI API ─────────────────────────────────────────────── */}
+          <Section title="NVIDIA AI Cloud" icon={KeyRound}>
+            <p className="text-xs text-text-dim">
+              Add your NVIDIA NIM API key to access cloud-hosted LLMs like Llama 3.3 70B, Nemotron, DeepSeek and more.
+              Get a free key at <span className="text-green-400">build.nvidia.com</span>.
+            </p>
+
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={nvKeyInput}
+                onChange={(e) => { setNvKeyInput(e.target.value); setNvKeyStatus('idle') }}
+                onKeyDown={(e) => e.key === 'Enter' && verifyNvidiaKey()}
+                placeholder="nvapi-..."
+                className="flex-1 bg-black/30 border border-border-glass rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-green-400/60 transition-colors font-mono"
+              />
+              <button
+                onClick={verifyNvidiaKey}
+                disabled={nvKeyStatus === 'checking' || !nvKeyInput.trim()}
+                className="px-4 py-2.5 text-sm rounded-lg border border-green-400/30 text-green-400 bg-green-400/10 hover:bg-green-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {nvKeyStatus === 'checking' ? 'Checking…' : 'Verify & Save'}
+              </button>
+            </div>
+
+            {nvKeyStatus === 'ok' && (
+              <p className="flex items-center gap-1.5 text-xs text-green-400">
+                <ShieldCheck size={12} /> API key is valid and saved.
+              </p>
+            )}
+            {nvKeyStatus === 'error' && (
+              <p className="flex items-center gap-1.5 text-xs text-red-400">
+                <AlertTriangle size={12} /> {nvKeyError}
+              </p>
+            )}
+            {nvidiaApiKey && nvKeyStatus === 'idle' && (
+              <p className="text-xs text-text-dim">✓ A key is already saved. Enter a new one above to replace it.</p>
+            )}
+          </Section>
+
+          {/* ── Ollama Connection ─────────────────────────────────────────── */}
           <Section title="Ollama Connection" icon={Server}>
             <div className="flex gap-3">
               <input

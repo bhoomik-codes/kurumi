@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useChatStore, Message } from '../stores/chatStore'
 import { useModelStore } from '../stores/modelStore'
@@ -7,7 +7,13 @@ import ChatInput from '../components/chat/ChatInput'
 import MessageBubble from '../components/chat/MessageBubble'
 import ConversationSidebar from '../components/chat/ConversationSidebar'
 import { KURUMI_SYSTEM_PROMPT } from '../constants/systemPrompt'
-import { Loader2, Cpu } from 'lucide-react'
+import { Loader2, Cpu, ChevronDown, Zap, HardDrive } from 'lucide-react'
+
+// ── Provider badge colours ──────────────────────────────────────────────────
+const PROVIDER_STYLES = {
+  ollama: { label: 'Local · Ollama', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  nvidia: { label: 'Cloud · NVIDIA', color: 'bg-green-400/10 text-green-300 border-green-400/20' },
+}
 
 export default function Chat() {
   const {
@@ -25,31 +31,66 @@ export default function Chat() {
     setMessages
   } = useChatStore()
 
-  const { activeModel, setActiveModel, setAvailableModels, isModelWarming, warmingProgress } = useModelStore()
-  const { loadFromDB, defaultModel, modelParams, ragTopK, ragMinScore } = useSettingsStore()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const {
+    activeModel, setActiveModel, setAvailableModels,
+    isModelWarming, warmingProgress
+  } = useModelStore()
 
-  // ── Boot sequence: load settings → fetch models → restore default model ──
+  const {
+    loadFromDB, defaultModel, modelParams, ragTopK, ragMinScore,
+    nvidiaApiKey, activeProvider, setSetting
+  } = useSettingsStore()
+
+  const [nvidiaModels, setNvidiaModels] = useState<{ id: string; label: string; tag: string }[]>([])
+  const [nvidiaModel, setNvidiaModel] = useState<string>('')
+  const [showModelPicker, setShowModelPicker] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
+  // Close picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // ── Boot sequence ─────────────────────────────────────────────────────────
   useEffect(() => {
     const boot = async () => {
-      // 1. Load persisted settings
       await loadFromDB()
 
-      // 2. Fetch available models (embedding models already filtered server-side)
+      // Load Ollama models (embedding models already filtered in backend)
       const models = await window.electron?.invoke('ollama:models')
-      if (models && models.length > 0) {
+      if (models?.length) {
         setAvailableModels(models)
-
-        // 3. Re-read default model (loadFromDB may have just set it in the store)
         const savedDefault = await window.electron?.invoke('settings:get', 'defaultModel') as string | null
-        const target = savedDefault ?? models[0].name
-        // skipWarmup=false → triggers background warmup
-        setActiveModel(target)
+        setActiveModel(savedDefault ?? models[0].name)
       }
 
-      // 4. Hydrate conversations from DB
+      // Load NVIDIA models if key is stored
+      const savedKey = await window.electron?.invoke('settings:get', 'nvidiaApiKey') as string | null
+      if (savedKey) {
+        const nModels = await window.electron?.invoke('nvidia:models', savedKey)
+        if (nModels?.length) {
+          setNvidiaModels(nModels)
+          const savedNvModel = await window.electron?.invoke('settings:get', 'nvidiaActiveModel') as string | null
+          setNvidiaModel(savedNvModel ?? nModels[0].id)
+        }
+      }
+
+      // Load saved provider
+      const savedProvider = await window.electron?.invoke('settings:get', 'activeProvider') as string | null
+      if (savedProvider === 'nvidia' || savedProvider === 'ollama') {
+        setSetting('activeProvider', savedProvider)
+      }
+
+      // Hydrate conversations
       const convs = await window.electron?.invoke('db:conversations:list') as any[]
-      if (convs && convs.length > 0) {
+      if (convs?.length) {
         const mapped = convs.map((c: any) => ({
           id: c.id,
           title: c.title,
@@ -64,7 +105,7 @@ export default function Chat() {
         setActiveConversation(latest.id)
         const msgs = await window.electron?.invoke('db:messages:list', latest.id) as any[]
         if (msgs) {
-          const mappedMsgs = msgs.map((m: any) => ({
+          setMessages(latest.id, msgs.map((m: any) => ({
             id: m.id,
             conversationId: m.conversation_id,
             role: m.role,
@@ -73,8 +114,7 @@ export default function Chat() {
             createdAt: m.created_at,
             tokenCount: m.token_count,
             generationMs: m.generation_ms,
-          }))
-          setMessages(latest.id, mappedMsgs)
+          })))
         }
       }
     }
@@ -83,26 +123,31 @@ export default function Chat() {
 
   const currentMessages = activeConversationId ? (messages[activeConversationId] || []) : []
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentMessages.length, streamingContent])
 
+  // ── Send message ──────────────────────────────────────────────────────────
   const handleSendMessage = async (content: string) => {
-    if (!activeModel) {
-      alert('Please select a model first.')
+    const isNvidia = activeProvider === 'nvidia'
+    const currentModel = isNvidia ? nvidiaModel : activeModel
+
+    if (!currentModel) {
+      alert(isNvidia ? 'Please select an NVIDIA model.' : 'Please select a model first.')
+      return
+    }
+    if (isNvidia && !nvidiaApiKey) {
+      alert('Add your NVIDIA API key in Settings first.')
       return
     }
 
     let conversationId = activeConversationId
-
-    // Create a new conversation if none exists
     if (!conversationId) {
       conversationId = uuidv4()
       const newConv = {
         id: conversationId,
         title: content.slice(0, 30) + (content.length > 30 ? '…' : ''),
-        model: activeModel,
+        model: currentModel,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         pinned: false
@@ -112,34 +157,27 @@ export default function Chat() {
       setActiveConversation(conversationId)
     }
 
-    // Add user message
     const userMsg: Message = {
-      id: uuidv4(),
-      conversationId,
-      role: 'user',
-      content,
-      createdAt: Date.now()
+      id: uuidv4(), conversationId, role: 'user', content, createdAt: Date.now()
     }
     addMessage(userMsg)
     await window.electron?.invoke('db:messages:insert', userMsg)
 
-    // Setup assistant reply
     const replyId = uuidv4()
     clearStreaming()
     setIsStreaming(true)
 
-    // ── RAG: only embed query if documents exist ──
+    // RAG context injection
     let systemPromptWithContext = KURUMI_SYSTEM_PROMPT
     try {
       const hasChunks = await window.electron?.invoke('docs:hasChunks')
       if (hasChunks) {
-        const relevantChunks = await window.electron?.invoke('docs:search', content, ragTopK) as any[]
-        if (relevantChunks && relevantChunks.length > 0) {
-          const good = relevantChunks.filter((c: any) => c.score >= ragMinScore)
-          if (good.length > 0) {
-            const contextText = good.map((c: any) => c.content).join('\n\n---\n\n')
+        const chunks = await window.electron?.invoke('docs:search', content, ragTopK) as any[]
+        if (chunks?.length) {
+          const good = chunks.filter((c: any) => c.score >= ragMinScore)
+          if (good.length) {
             systemPromptWithContext +=
-              `\n\n**DOCUMENT CONTEXT:**\nRelevant context from user's local knowledge base:\n\n${contextText}\n\nUse this context to answer if relevant.`
+              `\n\n**DOCUMENT CONTEXT:**\nRelevant context from user's local knowledge base:\n\n${good.map((c: any) => c.content).join('\n\n---\n\n')}\n\nUse this context to answer if relevant.`
           }
         }
       }
@@ -147,59 +185,91 @@ export default function Chat() {
       console.error('Vector search failed:', err)
     }
 
-    // Build history
     const history = [
       { role: 'system', content: systemPromptWithContext },
       ...[...currentMessages, userMsg].map(m => ({ role: m.role, content: m.content }))
     ]
 
-    // Start streaming
-    const unsubscribeChunk = window.electron?.on(`ollama:chat:chunk:${replyId}`, (_event, chunk: any) => {
-      if (chunk.message?.content) {
-        updateStreamingContent(chunk.message.content, chunk.done)
-      }
-    })
-
-    const unsubscribeDone = window.electron?.on(`ollama:chat:done:${replyId}`, async (_event, chunk: any) => {
-      const { streamingContent } = useChatStore.getState()
-
-      const assistantMsg: Message = {
-        id: replyId,
-        conversationId: conversationId!,
-        role: 'assistant',
-        content: streamingContent,
+    if (isNvidia) {
+      // ── NVIDIA path ────────────────────────────────────────────────────
+      const unsubChunk = window.electron?.on(`nvidia:chat:chunk:${replyId}`, (_e, chunk: any) => {
+        if (chunk.content) updateStreamingContent(chunk.content, false)
+      })
+      const unsubDone = window.electron?.on(`nvidia:chat:done:${replyId}`, async () => {
+        const { streamingContent: sc } = useChatStore.getState()
+        const msg: Message = {
+          id: replyId, conversationId: conversationId!, role: 'assistant',
+          content: sc, model: `nvidia/${nvidiaModel}`, createdAt: Date.now()
+        }
+        addMessage(msg)
+        clearStreaming()
+        await window.electron?.invoke('db:messages:insert', msg)
+        if (unsubChunk) unsubChunk()
+        if (unsubDone) unsubDone()
+      })
+      const unsubErr = window.electron?.on(`nvidia:chat:error:${replyId}`, (_e, errMsg: string) => {
+        console.error('NVIDIA stream error:', errMsg)
+        clearStreaming()
+        if (unsubChunk) unsubChunk()
+        if (unsubDone) unsubDone()
+        if (unsubErr) unsubErr()
+      })
+      window.electron?.send('nvidia:chat:stream', {
+        messages: history,
+        model: nvidiaModel,
+        apiKey: nvidiaApiKey,
+        replyId,
+        options: { temperature: modelParams.temperature, top_p: modelParams.top_p }
+      })
+    } else {
+      // ── Ollama path ────────────────────────────────────────────────────
+      const unsubChunk = window.electron?.on(`ollama:chat:chunk:${replyId}`, (_e, chunk: any) => {
+        if (chunk.message?.content) updateStreamingContent(chunk.message.content, chunk.done)
+      })
+      const unsubDone = window.electron?.on(`ollama:chat:done:${replyId}`, async (_e, chunk: any) => {
+        const { streamingContent: sc } = useChatStore.getState()
+        const msg: Message = {
+          id: replyId, conversationId: conversationId!, role: 'assistant',
+          content: sc, model: activeModel!, createdAt: Date.now(),
+          tokenCount: chunk.eval_count,
+          generationMs: chunk.eval_duration ? Math.round(chunk.eval_duration / 1000000) : undefined
+        }
+        addMessage(msg)
+        clearStreaming()
+        await window.electron?.invoke('db:messages:insert', msg)
+        if (unsubChunk) unsubChunk()
+        if (unsubDone) unsubDone()
+      })
+      window.electron?.send('ollama:chat:stream', {
+        messages: history,
         model: activeModel,
-        createdAt: Date.now(),
-        tokenCount: chunk.eval_count,
-        generationMs: chunk.eval_duration ? Math.round(chunk.eval_duration / 1000000) : undefined
-      }
-
-      addMessage(assistantMsg)
-      clearStreaming()
-      await window.electron?.invoke('db:messages:insert', assistantMsg)
-
-      if (unsubscribeChunk) unsubscribeChunk()
-      if (unsubscribeDone) unsubscribeDone()
-    })
-
-    window.electron?.send('ollama:chat:stream', {
-      messages: history,
-      model: activeModel,
-      options: {
-        temperature:    modelParams.temperature,
-        top_p:          modelParams.top_p,
-        top_k:          modelParams.top_k,
-        repeat_penalty: modelParams.repeat_penalty,
-        num_ctx:        modelParams.num_ctx,
-      },
-      replyId
-    })
+        options: {
+          temperature:    modelParams.temperature,
+          top_p:          modelParams.top_p,
+          top_k:          modelParams.top_k,
+          repeat_penalty: modelParams.repeat_penalty,
+          num_ctx:        modelParams.num_ctx,
+        },
+        replyId
+      })
+    }
   }
 
   const handleAbort = () => {
-    window.electron?.send('ollama:chat:abort')
+    if (activeProvider === 'nvidia') {
+      window.electron?.send('nvidia:chat:abort')
+    } else {
+      window.electron?.send('ollama:chat:abort')
+    }
     clearStreaming()
   }
+
+  const switchProvider = (p: 'ollama' | 'nvidia') => {
+    setSetting('activeProvider', p)
+    window.electron?.invoke('settings:set', 'activeProvider', p)
+  }
+
+  const providerStyle = PROVIDER_STYLES[activeProvider]
 
   return (
     <div className="flex h-full">
@@ -207,24 +277,89 @@ export default function Chat() {
 
       <div className="flex flex-col flex-1 bg-void/50 min-w-0">
         {/* Header */}
-        <div className="h-12 border-b border-border-glass glass-deep flex items-center justify-between px-5 flex-shrink-0">
+        <div className="h-12 border-b border-border-glass glass-deep flex items-center justify-between px-5 flex-shrink-0 gap-3">
+
+          {/* Active model name */}
           <h1 className="font-display text-sm text-text-primary tracking-wide truncate">
-            {activeModel || 'Select a Model'}
+            {activeProvider === 'nvidia'
+              ? (nvidiaModel || 'Select NVIDIA Model')
+              : (activeModel || 'Select a Model')}
           </h1>
 
-          {/* Model warming indicator */}
-          {isModelWarming && (
-            <div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-3 py-1 animate-pulse">
-              <Loader2 size={12} className="animate-spin" />
-              {warmingProgress || 'Loading model…'}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Warming indicator */}
+            {isModelWarming && activeProvider === 'ollama' && (
+              <div className="flex items-center gap-1.5 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2.5 py-1 animate-pulse">
+                <Loader2 size={11} className="animate-spin" />
+                {warmingProgress || 'Loading…'}
+              </div>
+            )}
+
+            {/* Provider toggle */}
+            <div className="flex items-center rounded-lg border border-border-glass overflow-hidden text-xs">
+              <button
+                onClick={() => switchProvider('ollama')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 transition-all ${
+                  activeProvider === 'ollama'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'text-text-dim hover:text-text-secondary hover:bg-white/5'
+                }`}
+              >
+                <HardDrive size={11} />
+                Local
+              </button>
+              <div className="w-px h-4 bg-border-glass" />
+              <button
+                onClick={() => switchProvider('nvidia')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 transition-all ${
+                  activeProvider === 'nvidia'
+                    ? 'bg-green-400/20 text-green-300'
+                    : nvidiaApiKey
+                      ? 'text-text-dim hover:text-text-secondary hover:bg-white/5'
+                      : 'text-text-dim/30 cursor-not-allowed'
+                }`}
+                disabled={!nvidiaApiKey}
+                title={!nvidiaApiKey ? 'Add NVIDIA API key in Settings' : 'Switch to NVIDIA Cloud'}
+              >
+                <Zap size={11} />
+                NVIDIA
+              </button>
             </div>
-          )}
-          {!isModelWarming && warmingProgress === 'Model ready' && (
-            <div className="flex items-center gap-2 text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-full px-3 py-1">
-              <Cpu size={12} />
-              Model ready
-            </div>
-          )}
+
+            {/* NVIDIA model picker */}
+            {activeProvider === 'nvidia' && nvidiaModels.length > 0 && (
+              <div className="relative" ref={pickerRef}>
+                <button
+                  onClick={() => setShowModelPicker(v => !v)}
+                  className="flex items-center gap-1.5 text-xs text-text-secondary bg-white/5 border border-border-glass rounded-lg px-2.5 py-1.5 hover:border-green-400/40 hover:text-text-primary transition-all max-w-48"
+                >
+                  <span className="truncate">{nvidiaModel.split('/')[1] ?? nvidiaModel}</span>
+                  <ChevronDown size={11} className="flex-shrink-0" />
+                </button>
+
+                {showModelPicker && (
+                  <div className="absolute right-0 top-full mt-1 w-72 bg-abyss border border-border-glass rounded-xl overflow-hidden shadow-2xl z-50 max-h-72 overflow-y-auto custom-scrollbar">
+                    {nvidiaModels.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setNvidiaModel(m.id)
+                          window.electron?.invoke('settings:set', 'nvidiaActiveModel', m.id)
+                          setShowModelPicker(false)
+                        }}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between hover:bg-white/5 transition-colors ${
+                          nvidiaModel === m.id ? 'text-green-400 bg-green-400/5' : 'text-text-secondary'
+                        }`}
+                      >
+                        <span className="truncate">{m.label || m.id.split('/')[1]}</span>
+                        <span className="text-xs text-text-dim ml-2 flex-shrink-0">{m.tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Messages */}
@@ -233,7 +368,10 @@ export default function Chat() {
             <div className="h-full flex flex-col items-center justify-center text-text-dim gap-3">
               <div className="text-4xl opacity-30">🩸</div>
               <p className="text-lg font-display">The void awaits your query…</p>
-              {isModelWarming && (
+              <span className={`text-xs px-3 py-1 rounded-full border ${providerStyle.color}`}>
+                {providerStyle.label}
+              </span>
+              {isModelWarming && activeProvider === 'ollama' && (
                 <p className="text-xs text-yellow-400/70 flex items-center gap-1">
                   <Loader2 size={10} className="animate-spin" />
                   {warmingProgress}
@@ -259,7 +397,7 @@ export default function Chat() {
             onSendMessage={handleSendMessage}
             onAbort={handleAbort}
             isStreaming={isStreaming}
-            disabled={!activeModel}
+            disabled={activeProvider === 'ollama' ? !activeModel : (!nvidiaModel || !nvidiaApiKey)}
           />
         </div>
       </div>

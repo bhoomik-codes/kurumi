@@ -33,6 +33,8 @@ interface SettingsState {
 
   // Connection
   ollamaUrl: string
+  nvidiaApiKey: string
+  activeProvider: 'ollama' | 'nvidia'
 
   // Theme
   themeAccent: string
@@ -71,6 +73,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   ragEmbeddingModel: 'nomic-embed-text',
 
   ollamaUrl: 'http://localhost:11434',
+  nvidiaApiKey: '',
+  activeProvider: 'ollama' as const,
   themeAccent: 'red-core',
 
   systemStats: {
@@ -97,6 +101,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         ragMinScore:       all['ragMinScore']        ?? state.ragMinScore,
         ragEmbeddingModel: all['ragEmbeddingModel']  ?? state.ragEmbeddingModel,
         ollamaUrl:         all['ollamaUrl']          ?? state.ollamaUrl,
+        nvidiaApiKey:      all['nvidiaApiKey']       ?? state.nvidiaApiKey,
+        activeProvider:    all['activeProvider']     ?? state.activeProvider,
         themeAccent:       all['themeAccent']        ?? state.themeAccent,
       }))
     } catch {
