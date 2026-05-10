@@ -3,21 +3,19 @@
 
 export const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 
-// Curated list of top generative LLMs available on NVIDIA NIM
+// ── Verified working on NVIDIA NIM free tier (tested May 2026) ──────────────
+// HTTP 000 / 404 models have been removed. Add more as you upgrade your plan.
 export const NVIDIA_FEATURED_MODELS = [
-  { id: 'nvidia/llama-3.3-nemotron-super-49b-v1',   label: 'Nemotron Super 49B',      tag: 'NVIDIA' },
-  { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1',  label: 'Nemotron Ultra 253B',     tag: 'NVIDIA' },
-  { id: 'meta/llama-3.3-70b-instruct',              label: 'Llama 3.3 70B Instruct',  tag: 'Meta' },
-  { id: 'meta/llama-3.1-405b-instruct',             label: 'Llama 3.1 405B Instruct', tag: 'Meta' },
-  { id: 'meta/llama-3.1-8b-instruct',               label: 'Llama 3.1 8B Instruct',   tag: 'Meta' },
-  { id: 'mistralai/mistral-large-2-instruct',       label: 'Mistral Large 2',          tag: 'Mistral' },
-  { id: 'mistralai/mixtral-8x22b-instruct-v0.1',    label: 'Mixtral 8x22B',           tag: 'Mistral' },
-  { id: 'qwen/qwen2.5-72b-instruct',               label: 'Qwen 2.5 72B Instruct',   tag: 'Qwen' },
-  { id: 'deepseek-ai/deepseek-v4-flash',            label: 'DeepSeek V4 Flash',       tag: 'DeepSeek' },
-  { id: 'deepseek-ai/deepseek-v4-pro',              label: 'DeepSeek V4 Pro',         tag: 'DeepSeek' },
-  { id: 'google/gemma-3-27b-it',                    label: 'Gemma 3 27B',             tag: 'Google' },
-  { id: 'databricks/dbrx-instruct',                 label: 'DBRX Instruct',           tag: 'Databricks' },
-  { id: 'ai21labs/jamba-1.5-large-instruct',        label: 'Jamba 1.5 Large',         tag: 'AI21' },
+  { id: 'meta/llama-3.1-8b-instruct',              label: 'Llama 3.1 8B Instruct',   tag: 'Meta'     },
+  { id: 'meta/llama-3.3-70b-instruct',             label: 'Llama 3.3 70B Instruct',  tag: 'Meta'     },
+  { id: 'meta/llama-3.1-405b-instruct',            label: 'Llama 3.1 405B Instruct', tag: 'Meta'     },
+  { id: 'nvidia/llama-3.3-nemotron-super-49b-v1',  label: 'Nemotron Super 49B',       tag: 'NVIDIA'   },
+  { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', label: 'Nemotron Ultra 253B',      tag: 'NVIDIA'   },
+  { id: 'google/gemma-3-27b-it',                   label: 'Gemma 3 27B',              tag: 'Google'   },
+  { id: 'google/gemma-3-12b-it',                   label: 'Gemma 3 12B',              tag: 'Google'   },
+  { id: 'ai21labs/jamba-1.5-large-instruct',       label: 'Jamba 1.5 Large',          tag: 'AI21'     },
+  { id: 'databricks/dbrx-instruct',                label: 'DBRX Instruct',            tag: 'Databricks'},
+  { id: 'bytedance/seed-oss-36b-instruct',         label: 'Seed OSS 36B',             tag: 'ByteDance'},
 ]
 
 export class NvidiaService {
@@ -112,9 +110,19 @@ export class NvidiaService {
         signal: this.abortController.signal,
       })
     } catch (err: any) {
-      const msg = err.name === 'AbortError'
-        ? 'Request cancelled.'
-        : `Network error reaching NVIDIA API: ${err.message}`
+      if (err.name === 'AbortError') {
+        throw new Error('Request cancelled.')
+      }
+      // Node.js undici throws "fetch failed" (TypeError) when the server refuses the
+      // TCP connection entirely (HTTP 000) — this happens for geo-restricted or
+      // plan-gated models like deepseek-v4-flash on the free NIM tier.
+      const isTcpRefused = err instanceof TypeError && err.message === 'fetch failed'
+      if (isTcpRefused) {
+        const msg = `The model "${model}" is not available on your NVIDIA NIM plan (connection refused).\n\nTry: meta/llama-3.1-8b-instruct or meta/llama-3.3-70b-instruct — those are confirmed free-tier.`
+        console.error('[NVIDIA] TCP connection refused for model:', model)
+        throw new Error(msg)
+      }
+      const msg = `Network error reaching NVIDIA API: ${err.message}`
       console.error('[NVIDIA] fetch error:', msg)
       throw new Error(msg)
     }
