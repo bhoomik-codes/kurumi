@@ -197,19 +197,28 @@ export default function Chat() {
       })
       const unsubDone = window.electron?.on(`nvidia:chat:done:${replyId}`, async () => {
         const { streamingContent: sc } = useChatStore.getState()
+        const finalContent = sc.trim() || '_(No response received — model returned empty output. Check terminal for [NVIDIA] logs.)_'
         const msg: Message = {
           id: replyId, conversationId: conversationId!, role: 'assistant',
-          content: sc, model: `nvidia/${nvidiaModel}`, createdAt: Date.now()
+          content: finalContent, model: nvidiaModel, createdAt: Date.now()
         }
         addMessage(msg)
         clearStreaming()
         await window.electron?.invoke('db:messages:insert', msg)
         if (unsubChunk) unsubChunk()
         if (unsubDone) unsubDone()
+        if (unsubErr) unsubErr()
       })
       const unsubErr = window.electron?.on(`nvidia:chat:error:${replyId}`, (_e, errMsg: string) => {
-        console.error('NVIDIA stream error:', errMsg)
+        console.error('[NVIDIA] Stream error received in renderer:', errMsg)
+        const errContent = `⚠️ **NVIDIA API Error**\n\n\`\`\`\n${errMsg}\n\`\`\`\n\n_Check your API key in Settings or try a different model._`
+        const errBubble: Message = {
+          id: replyId, conversationId: conversationId!, role: 'assistant',
+          content: errContent, model: nvidiaModel, createdAt: Date.now()
+        }
+        addMessage(errBubble)
         clearStreaming()
+        void window.electron?.invoke('db:messages:insert', errBubble)
         if (unsubChunk) unsubChunk()
         if (unsubDone) unsubDone()
         if (unsubErr) unsubErr()

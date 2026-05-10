@@ -4,7 +4,6 @@
 export const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 
 // Curated list of top generative LLMs available on NVIDIA NIM
-// (Filters out embeddings, VLMs, code-only models for the main chat list)
 export const NVIDIA_FEATURED_MODELS = [
   { id: 'nvidia/llama-3.3-nemotron-super-49b-v1',   label: 'Nemotron Super 49B',      tag: 'NVIDIA' },
   { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1',  label: 'Nemotron Ultra 253B',     tag: 'NVIDIA' },
@@ -24,7 +23,6 @@ export const NVIDIA_FEATURED_MODELS = [
 export class NvidiaService {
   private abortController: AbortController | null = null
 
-  // Validate API key is reachable
   async checkKey(apiKey: string): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await fetch(`${NVIDIA_BASE_URL}/models`, {
@@ -33,29 +31,30 @@ export class NvidiaService {
       })
       if (res.ok) return { ok: true }
       const body = await res.text()
-      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` }
     } catch (err: any) {
       return { ok: false, error: err.message }
     }
   }
 
-  // List all available models from NVIDIA API (returns generative ones only)
   async getModels(apiKey: string): Promise<any[]> {
     try {
       const res = await fetch(`${NVIDIA_BASE_URL}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(10000),
       })
-      if (!res.ok) return NVIDIA_FEATURED_MODELS
-
+      if (!res.ok) {
+        console.warn(`[NVIDIA] getModels failed HTTP ${res.status}, falling back to featured list`)
+        return NVIDIA_FEATURED_MODELS
+      }
       const data = await res.json()
       const all: any[] = data.data ?? []
-      // Filter known embedding/vision/audio model patterns
       const SKIP_PATTERNS = ['embed', 'clip', 'vlm', 'vision', 'rerank', 'whisper', 'tts', 'coder', 'deplot', 'fuyu', 'bge-']
-      return all
-        .filter(m => !SKIP_PATTERNS.some(p => m.id.toLowerCase().includes(p)))
-        .map(m => ({ id: m.id, label: m.id, tag: m.id.split('/')[0] }))
-    } catch {
+      const filtered = all.filter(m => !SKIP_PATTERNS.some(p => m.id.toLowerCase().includes(p)))
+      console.log(`[NVIDIA] ${filtered.length} generative models found (${all.length} total)`)
+      return filtered.map(m => ({ id: m.id, label: m.id.split('/')[1] ?? m.id, tag: m.id.split('/')[0] }))
+    } catch (err: any) {
+      console.warn('[NVIDIA] getModels error, using featured list:', err.message)
       return NVIDIA_FEATURED_MODELS
     }
   }
@@ -67,7 +66,20 @@ export class NvidiaService {
     }
   }
 
-  // Streaming OpenAI-compatible chat completions
+  /**
+   * Stream chat completions from NVIDIA NIM.
+   *
+   * NVIDIA SSE format notes (verified via curl):
+   *  - Each chunk is:  data: <JSON>\n\n
+   *  - Content chunks: choices[0].delta.content = "token"
+   *  - Finish chunk:   choices[0].finish_reason = "stop", delta has NO content field
+   *  - Usage chunk:    choices = [] (empty array), usage = {...}
+   *  - Final sentinel: data: [DONE]
+   *
+   * BUG FIXED: previous version required delta.content to be present to emit
+   * `done:true`, which means the finish chunk (no content) was silently dropped
+   * and the stream never terminated on the frontend.
+   */
   async *streamChat(
     messages: { role: string; content: string }[],
     model: string,
@@ -86,56 +98,120 @@ export class NvidiaService {
       max_tokens:  options.max_tokens  ?? 4096,
     }
 
-    const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: this.abortController.signal,
-    })
+    console.log(`[NVIDIA] Starting stream — model: ${model}, temp: ${body.temperature}`)
 
-    if (!response.ok) {
-      const errText = await response.text()
-      throw new Error(`NVIDIA API error (${response.status}): ${errText.slice(0, 200)}`)
+    let response: Response
+    try {
+      response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: this.abortController.signal,
+      })
+    } catch (err: any) {
+      const msg = err.name === 'AbortError'
+        ? 'Request cancelled.'
+        : `Network error reaching NVIDIA API: ${err.message}`
+      console.error('[NVIDIA] fetch error:', msg)
+      throw new Error(msg)
     }
 
-    if (!response.body) throw new Error('No response body from NVIDIA API')
+    if (!response.ok) {
+      let errBody = ''
+      try { errBody = await response.text() } catch {}
+      const msg = `NVIDIA API error ${response.status} ${response.statusText}: ${errBody.slice(0, 300)}`
+      console.error('[NVIDIA]', msg)
+      throw new Error(msg)
+    }
+
+    if (!response.body) {
+      throw new Error('NVIDIA API returned an empty response body.')
+    }
+
+    console.log(`[NVIDIA] Stream connected, reading SSE…`)
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    let totalTokens = 0
+    let chunkCount = 0
+    let buffer = ''
 
     try {
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          console.log(`[NVIDIA] Stream EOF — ${chunkCount} SSE chunks, ~${totalTokens} tokens`)
+          break
+        }
 
-        const text = decoder.decode(value, { stream: true })
-        const lines = text.split('\n').filter(l => l.startsWith('data:'))
+        buffer += decoder.decode(value, { stream: true })
 
-        for (const line of lines) {
-          const payload = line.slice(5).trim()
-          if (payload === '[DONE]') return
-          try {
-            const data = JSON.parse(payload)
-            const delta = data.choices?.[0]?.delta
-            const finish = data.choices?.[0]?.finish_reason
-            if (delta?.content) {
-              yield { content: delta.content, done: false }
+        // Split on double-newline (SSE event boundary)
+        const events = buffer.split('\n\n')
+        // Keep the last incomplete event in the buffer
+        buffer = events.pop() ?? ''
+
+        for (const event of events) {
+          const lines = event.split('\n')
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue
+            const payload = line.slice(5).trim()
+
+            if (payload === '[DONE]') {
+              console.log('[NVIDIA] Received [DONE] sentinel')
+              // Emit the done signal — this is what closes the stream on the frontend
+              yield { content: '', done: true, totalTokens }
+              return
             }
-            if (finish) {
-              yield {
-                content: '',
-                done: true,
-                usage: data.usage ?? null,
+
+            try {
+              const data = JSON.parse(payload)
+              chunkCount++
+
+              // Usage-only chunk (choices is empty array)
+              if (!Array.isArray(data.choices) || data.choices.length === 0) {
+                if (data.usage) {
+                  totalTokens = data.usage.total_tokens ?? totalTokens
+                  console.log(`[NVIDIA] Usage — prompt: ${data.usage.prompt_tokens}, completion: ${data.usage.completion_tokens}`)
+                }
+                continue
               }
+
+              const choice = data.choices[0]
+              const delta = choice?.delta ?? {}
+              const finishReason = choice?.finish_reason
+
+              // Yield content if present
+              if (delta.content) {
+                yield { content: delta.content, done: false }
+              }
+
+              // Finish chunk — finish_reason is set (e.g. "stop", "length")
+              // NOTE: The content field may be absent here. Do NOT require it.
+              if (finishReason) {
+                console.log(`[NVIDIA] finish_reason=${finishReason}`)
+                // Don't yield done here — wait for the explicit [DONE] sentinel
+                // to avoid double-triggering. The [DONE] branch above handles it.
+              }
+            } catch (parseErr: any) {
+              console.warn('[NVIDIA] Failed to parse SSE payload:', payload, parseErr.message)
             }
-          } catch { /* skip malformed SSE lines */ }
+          }
         }
       }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log('[NVIDIA] Stream aborted by user')
+        return
+      }
+      console.error('[NVIDIA] Stream read error:', err.message)
+      throw new Error(`Stream interrupted: ${err.message}`)
     } finally {
       reader.releaseLock()
+      this.abortController = null
     }
   }
 }
