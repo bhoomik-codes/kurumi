@@ -41,9 +41,11 @@ export default function Chat() {
     nvidiaApiKey, activeProvider, setSetting
   } = useSettingsStore()
 
-  const [nvidiaModels, setNvidiaModels] = useState<{ id: string; label: string; tag: string }[]>([])
+  const [nvidiaModels, setNvidiaModels] = useState<{ id: string; label: string; tag: string; available: boolean }[]>([])
   const [nvidiaModel, setNvidiaModel] = useState<string>('')
+  const [nvidiaProbing, setNvidiaProbing] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const [showUnavailable, setShowUnavailable] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
 
@@ -71,14 +73,18 @@ export default function Chat() {
         setActiveModel(savedDefault ?? models[0].name)
       }
 
-      // Load NVIDIA models if key is stored
+      // Load NVIDIA models if key is stored (probes availability in parallel)
       const savedKey = await window.electron?.invoke('settings:get', 'nvidiaApiKey') as string | null
       if (savedKey) {
+        setNvidiaProbing(true)
         const nModels = await window.electron?.invoke('nvidia:models', savedKey)
+        setNvidiaProbing(false)
         if (nModels?.length) {
           setNvidiaModels(nModels)
           const savedNvModel = await window.electron?.invoke('settings:get', 'nvidiaActiveModel') as string | null
-          setNvidiaModel(savedNvModel ?? nModels[0].id)
+          // Default to first AVAILABLE model
+          const firstAvail = nModels.find((m: any) => m.available)
+          setNvidiaModel(savedNvModel ?? firstAvail?.id ?? nModels[0].id)
         }
       }
 
@@ -336,37 +342,86 @@ export default function Chat() {
             </div>
 
             {/* NVIDIA model picker */}
-            {activeProvider === 'nvidia' && nvidiaModels.length > 0 && (
-              <div className="relative" ref={pickerRef}>
-                <button
-                  onClick={() => setShowModelPicker(v => !v)}
-                  className="flex items-center gap-1.5 text-xs text-text-secondary bg-white/5 border border-border-glass rounded-lg px-2.5 py-1.5 hover:border-green-400/40 hover:text-text-primary transition-all max-w-48"
-                >
-                  <span className="truncate">{nvidiaModel.split('/')[1] ?? nvidiaModel}</span>
-                  <ChevronDown size={11} className="flex-shrink-0" />
-                </button>
+            {activeProvider === 'nvidia' && (
+              nvidiaProbing ? (
+                <div className="flex items-center gap-1.5 text-xs text-text-dim px-2">
+                  <Loader2 size={11} className="animate-spin" />
+                  Checking availability…
+                </div>
+              ) : nvidiaModels.length > 0 ? (
+                <div className="relative" ref={pickerRef}>
+                  <button
+                    onClick={() => setShowModelPicker(v => !v)}
+                    className="flex items-center gap-1.5 text-xs text-text-secondary bg-white/5 border border-border-glass rounded-lg px-2.5 py-1.5 hover:border-green-400/40 hover:text-text-primary transition-all max-w-52"
+                  >
+                    <span className="truncate">{nvidiaModel.split('/')[1] ?? nvidiaModel}</span>
+                    <ChevronDown size={11} className="flex-shrink-0" />
+                  </button>
 
-                {showModelPicker && (
-                  <div className="absolute right-0 top-full mt-1 w-72 bg-abyss border border-border-glass rounded-xl overflow-hidden shadow-2xl z-50 max-h-72 overflow-y-auto custom-scrollbar">
-                    {nvidiaModels.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => {
-                          setNvidiaModel(m.id)
-                          window.electron?.invoke('settings:set', 'nvidiaActiveModel', m.id)
-                          setShowModelPicker(false)
-                        }}
-                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between hover:bg-white/5 transition-colors ${
-                          nvidiaModel === m.id ? 'text-green-400 bg-green-400/5' : 'text-text-secondary'
-                        }`}
-                      >
-                        <span className="truncate">{m.label || m.id.split('/')[1]}</span>
-                        <span className="text-xs text-text-dim ml-2 flex-shrink-0">{m.tag}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  {showModelPicker && (() => {
+                    const visible = showUnavailable
+                      ? nvidiaModels
+                      : nvidiaModels.filter(m => m.available)
+                    const unavailCount = nvidiaModels.filter(m => !m.available).length
+                    return (
+                      <div className="absolute right-0 top-full mt-1 w-80 bg-abyss border border-border-glass rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden">
+                        {/* Filter toggle header */}
+                        <div className="flex items-center justify-between px-3 py-2 border-b border-border-glass bg-black/20">
+                          <span className="text-xs text-text-dim">
+                            {nvidiaModels.filter(m => m.available).length} available
+                          </span>
+                          {unavailCount > 0 && (
+                            <button
+                              onClick={() => setShowUnavailable(v => !v)}
+                              className="text-xs text-text-dim hover:text-text-secondary transition-colors"
+                            >
+                              {showUnavailable ? `Hide ${unavailCount} unavailable` : `Show ${unavailCount} unavailable`}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Model list */}
+                        <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                          {visible.length === 0 ? (
+                            <div className="px-4 py-6 text-xs text-text-dim text-center">
+                              No available models detected.<br/>
+                              <button onClick={() => setShowUnavailable(true)} className="underline mt-1">Show all</button>
+                            </div>
+                          ) : (
+                            visible.map(m => (
+                              <button
+                                key={m.id}
+                                disabled={!m.available}
+                                onClick={() => {
+                                  if (!m.available) return
+                                  setNvidiaModel(m.id)
+                                  window.electron?.invoke('settings:set', 'nvidiaActiveModel', m.id)
+                                  setShowModelPicker(false)
+                                }}
+                                className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors ${
+                                  !m.available
+                                    ? 'opacity-40 cursor-not-allowed'
+                                    : nvidiaModel === m.id
+                                      ? 'text-green-400 bg-green-400/5'
+                                      : 'text-text-secondary hover:bg-white/5'
+                                }`}
+                              >
+                                <span className="truncate">{m.label || m.id.split('/')[1]}</span>
+                                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                  <span className="text-xs text-text-dim">{m.tag}</span>
+                                  {m.available
+                                    ? <span className="w-1.5 h-1.5 rounded-full bg-green-400" title="Available" />
+                                    : <span className="w-1.5 h-1.5 rounded-full bg-red-500/50" title="Not on your plan" />}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              ) : null
             )}
           </div>
         </div>

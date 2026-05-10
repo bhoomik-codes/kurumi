@@ -35,26 +35,72 @@ export class NvidiaService {
     }
   }
 
+  /**
+   * Probe whether a model is accessible on the user's NIM plan.
+   * Uses a minimal non-streaming request with a short timeout.
+   * Returns true = available, false = plan-gated / geo-blocked / not found.
+   */
+  async probeModel(modelId: string, apiKey: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: 'user', content: '.' }],
+          stream: false,
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(6000),
+      })
+      // 200 = available, 402/403/404 = not on plan
+      return res.status === 200
+    } catch {
+      // fetch failed (TCP refused) or timeout = not available
+      return false
+    }
+  }
+
   async getModels(apiKey: string): Promise<any[]> {
+    // Start with the curated list as the base
+    let baseModels = [...NVIDIA_FEATURED_MODELS]
+
+    // Try to fetch live model list from API and merge it in
     try {
       const res = await fetch(`${NVIDIA_BASE_URL}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(8000),
       })
-      if (!res.ok) {
-        console.warn(`[NVIDIA] getModels failed HTTP ${res.status}, falling back to featured list`)
-        return NVIDIA_FEATURED_MODELS
+      if (res.ok) {
+        const data = await res.json()
+        const all: any[] = data.data ?? []
+        const SKIP_PATTERNS = ['embed', 'clip', 'vlm', 'vision', 'rerank', 'whisper', 'tts', 'coder', 'deplot', 'fuyu', 'bge-']
+        const live = all
+          .filter(m => !SKIP_PATTERNS.some(p => m.id.toLowerCase().includes(p)))
+          .map(m => ({ id: m.id, label: m.id.split('/')[1] ?? m.id, tag: m.id.split('/')[0], available: false }))
+        // Merge: keep featured order, add any extra from live list
+        const featuredIds = new Set(baseModels.map(m => m.id))
+        const extras = live.filter(m => !featuredIds.has(m.id))
+        baseModels = [...baseModels.map(m => ({ ...m, available: false })), ...extras]
+        console.log(`[NVIDIA] ${baseModels.length} models to probe (${extras.length} extras from live list)`)
       }
-      const data = await res.json()
-      const all: any[] = data.data ?? []
-      const SKIP_PATTERNS = ['embed', 'clip', 'vlm', 'vision', 'rerank', 'whisper', 'tts', 'coder', 'deplot', 'fuyu', 'bge-']
-      const filtered = all.filter(m => !SKIP_PATTERNS.some(p => m.id.toLowerCase().includes(p)))
-      console.log(`[NVIDIA] ${filtered.length} generative models found (${all.length} total)`)
-      return filtered.map(m => ({ id: m.id, label: m.id.split('/')[1] ?? m.id, tag: m.id.split('/')[0] }))
     } catch (err: any) {
-      console.warn('[NVIDIA] getModels error, using featured list:', err.message)
-      return NVIDIA_FEATURED_MODELS
+      console.warn('[NVIDIA] Could not fetch live model list, using featured:', err.message)
+      baseModels = baseModels.map(m => ({ ...m, available: false }))
     }
+
+    // Probe all models in parallel for availability
+    console.log(`[NVIDIA] Probing ${baseModels.length} models in parallel (6s timeout each)…`)
+    const probeResults = await Promise.all(
+      baseModels.map(m => this.probeModel(m.id, apiKey))
+    )
+    const result = baseModels.map((m, i) => ({ ...m, available: probeResults[i] }))
+    const availCount = result.filter(m => m.available).length
+    console.log(`[NVIDIA] Probe complete — ${availCount}/${result.length} models available`)
+    return result
   }
 
   abort() {
