@@ -10,21 +10,41 @@ export function registerOllamaIpc() {
     return await ollamaService.getModels()
   })
 
+  ipcMain.handle('ollama:warmup', async (_event, modelName: string) => {
+    return await ollamaService.warmup(modelName)
+  })
+
+  ipcMain.handle('ollama:warmup:abort', async () => {
+    ollamaService.abortWarmup()
+    return true
+  })
+
+  ipcMain.handle('ollama:ps', async () => {
+    try {
+      const response = await fetch(`${ollamaService.baseUrl}/api/ps`)
+      if (!response.ok) return null
+      return await response.json()
+    } catch {
+      return null
+    }
+  })
+
   // We use standard event messaging for streaming, not handle.
   ipcMain.on('ollama:chat:stream', async (event, args) => {
     const { messages, model, options, replyId } = args
-    
+    ollamaService.abortWarmup()
+
     try {
       const stream = ollamaService.streamChat(messages, model, options)
-      
+
       for await (const chunk of stream) {
         if (event.sender.isDestroyed()) {
           ollamaService.abortCurrentStream()
           break
         }
-        
+
         event.sender.send(`ollama:chat:chunk:${replyId}`, chunk)
-        
+
         if (chunk.done) {
           event.sender.send(`ollama:chat:done:${replyId}`, chunk)
         }
@@ -99,4 +119,3 @@ export function registerOllamaIpc() {
     ollamaService.abortCurrentStream()
   })
 }
-

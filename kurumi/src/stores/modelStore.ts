@@ -1,14 +1,5 @@
 import { create } from 'zustand'
 
-export interface ModelParameters {
-  temperature: number
-  top_p: number
-  top_k: number
-  repeat_penalty: number
-  num_ctx: number
-  seed?: number
-}
-
 export interface LocalModel {
   name: string
   model: string
@@ -25,32 +16,46 @@ export interface LocalModel {
 
 interface ModelState {
   availableModels: LocalModel[]
-  runningModels: any[]
   activeModel: string | null
-  globalParameters: ModelParameters
-  
+  isModelWarming: boolean
+  warmingProgress: string  // human-readable status message
+
   setAvailableModels: (models: LocalModel[]) => void
-  setRunningModels: (models: any[]) => void
-  setActiveModel: (modelName: string | null) => void
-  updateParameters: (params: Partial<ModelParameters>) => void
+  setActiveModel: (modelName: string | null, skipWarmup?: boolean) => void
+  setIsWarming: (v: boolean, msg?: string) => void
 }
 
 export const useModelStore = create<ModelState>((set) => ({
   availableModels: [],
-  runningModels: [],
   activeModel: null,
-  globalParameters: {
-    temperature: 0.7,
-    top_p: 0.9,
-    top_k: 40,
-    repeat_penalty: 1.1,
-    num_ctx: 4096
-  },
+  isModelWarming: false,
+  warmingProgress: '',
 
   setAvailableModels: (models) => set({ availableModels: models }),
-  setRunningModels: (models) => set({ runningModels: models }),
-  setActiveModel: (modelName) => set({ activeModel: modelName }),
-  updateParameters: (params) => set((state) => ({ 
-    globalParameters: { ...state.globalParameters, ...params } 
-  }))
+
+  setIsWarming: (v, msg = '') => set({ isModelWarming: v, warmingProgress: msg }),
+
+  setActiveModel: (modelName, skipWarmup = false) => {
+    set({ activeModel: modelName })
+    // Persist default model choice
+    if (modelName) {
+      void window.electron?.invoke('settings:set', 'defaultModel', modelName)
+    }
+
+    if (modelName && !skipWarmup) {
+      void (async () => {
+        set({ isModelWarming: true, warmingProgress: 'Loading model into VRAM…' })
+        try {
+          await window.electron?.invoke('ollama:warmup', modelName)
+          set({ warmingProgress: 'Model ready' })
+          // Clear "ready" message after 2s
+          setTimeout(() => set({ warmingProgress: '' }), 2000)
+        } catch {
+          set({ warmingProgress: '' })
+        } finally {
+          set({ isModelWarming: false })
+        }
+      })()
+    }
+  },
 }))

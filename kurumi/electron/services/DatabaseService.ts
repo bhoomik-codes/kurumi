@@ -65,6 +65,12 @@ class DatabaseService {
         chunk_index INTEGER NOT NULL
       );
 
+      -- Key-value settings store
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS prompts (
         id          TEXT PRIMARY KEY,
         title       TEXT NOT NULL,
