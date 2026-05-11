@@ -211,27 +211,32 @@ npm run build:linux  # Linux
 ## ✦ Changelog
 
 ### Phase 4.5 — Cloud Integration & Resilience (Latest)
+
 - **NVIDIA NIM Cloud API:** Added seamless dual-provider switching to flip between local Ollama models and lightning-fast cloud endpoints.
 - **Parallel Probing:** Smart model picker that probes availability in real-time, grays out plan-gated models, and defaults to working free-tier options.
 - **Robust Parsing:** Ground-up rewrite of the SSE streaming parser for stable cloud connections, plus in-chat error bubbles to prevent silent crashes.
 
 ### Phase 4 — Document Intelligence (RAG) & Settings
+
 - **Local RAG Pipeline:** Fully offline document indexing using `@xenova/transformers` and LanceDB.
 - **Embedding Upgrade:** Switched to `nomic-embed-text` (274MB) for 10-20x faster document chunking and vector storage directly on the CPU.
 - **Persistent Settings:** New centralized configuration for default models, context windows, RAG chunk sizes, and API keys backed by SQLite.
 - **Performance:** Instant bypass of the RAG pipeline when the knowledge base is empty.
 
 ### Phase 3 — Model Management & Sidebar
+
 - **Built-in Model Store:** Browse, filter, and pull models directly from the Ollama library or HuggingFace GGUFs without touching a terminal.
 - **Streaming Downloads:** Real-time, layer-by-layer download progress bars.
 - **Sidebar Upgrades:** Full conversation history, search, pinning, and clean slate capabilities.
 
 ### Phase 2 — Core UI & Aesthetic
+
 - **Design System:** Implemented the "Neo-Glassmorphism × Dark Blood" layout.
 - **Markdown Engine:** Integrated custom syntax highlighting infused with the Cursed Blood theme.
 - **State Architecture:** Fully wired Zustand stores handling real-time chat, streaming responses, and UI atoms.
 
 ### Phase 1 — Scaffold
+
 - **Foundation:** Established the Electron + React + Vite + TypeScript architecture.
 - **IPC & Storage:** Created the Ollama bridge and local SQLite instance via `better-sqlite3`.
 
