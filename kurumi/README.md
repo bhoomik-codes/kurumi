@@ -46,6 +46,8 @@ This is not another ChatGPT wrapper. This is what happens when you build a local
 
 Switch between any locally installed model in a single click. Llama, Mistral, Gemma, Qwen, DeepSeek, Phi — if Ollama can run it, KURUMI can use it. Download new models directly from inside the app, watch layer-by-layer progress, and get back to work. No terminal required.
 
+Need a boost? Optionally connect an **NVIDIA NIM API key** to seamlessly fallback to lightning-fast cloud models (like Llama 3.1 405B) without leaving the UI.
+
 ### 📄 Document Intelligence
 
 Drop in a **PDF, Word doc, Excel sheet, CSV, PowerPoint, or image** and ask anything about it. KURUMI parses, chunks, embeds, and stores your documents locally using a full RAG pipeline — embeddings generated on-device, indexed into a local vector store. Your files never leave your machine. Not even close.
@@ -135,12 +137,13 @@ Every panel is layered glass. Every border glows like a cursed technique mid-act
 ## ✦ Roadmap
 
 ```
-Phase 1 — Core Chat + Ollama Integration         [ IN PROGRESS ]
-Phase 2 — Document Intelligence + RAG            [ COMING SOON ]
-Phase 3 — Artifact Rendering Engine              [ COMING SOON ]
-Phase 4 — Image Generation Studio               [ COMING SOON ]
-Phase 5 — Polish, Animations, Power Features     [ COMING SOON ]
-Phase 6 — Packaged Releases (Win/Mac/Linux)      [ COMING SOON ]
+Phase 1 — Core Chat + Ollama Integration         [ COMPLETED ]
+Phase 2 — Document Intelligence + RAG            [ COMPLETED ]
+Phase 3 — Cloud LLM Integration (NVIDIA NIM)     [ COMPLETED ]
+Phase 4 — Artifact Rendering Engine              [ NEXT ]
+Phase 5 — Image Generation Studio               [ COMING SOON ]
+Phase 6 — Polish, Animations, Power Features     [ COMING SOON ]
+Phase 7 — Packaged Releases (Win/Mac/Linux)      [ COMING SOON ]
 ```
 
 **On the horizon:**
