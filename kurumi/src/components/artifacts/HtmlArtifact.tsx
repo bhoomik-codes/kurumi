@@ -1,11 +1,10 @@
-import React, { useRef, useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Copy, Check, Eye, Code } from 'lucide-react'
 import { CodeArtifact } from './CodeArtifact'
 
 export function HtmlArtifact({ language, code }: { language: string; code: string }) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
   const [copied, setCopied] = useState(false)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code)
@@ -75,7 +74,6 @@ export function HtmlArtifact({ language, code }: { language: string; code: strin
       <div className="relative min-h-[150px] w-full bg-[#111] overflow-hidden">
         {viewMode === 'preview' ? (
           <iframe
-            ref={iframeRef}
             srcDoc={injectedCode}
             sandbox="allow-scripts"
             className="w-full h-full min-h-[300px] border-none bg-white"

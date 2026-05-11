@@ -3,6 +3,7 @@ import { join } from 'path'
 import { registerSqliteIpc } from './ipc/sqlite.ipc'
 import { registerOllamaIpc } from './ipc/ollama.ipc'
 import { registerStoreIpc } from './ipc/store.ipc'
+import { registerSystemIpc } from './ipc/system.ipc'
 
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
@@ -63,6 +64,7 @@ app.whenReady().then(() => {
   registerSqliteIpc()
   registerOllamaIpc()
   registerStoreIpc()
+  registerSystemIpc()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

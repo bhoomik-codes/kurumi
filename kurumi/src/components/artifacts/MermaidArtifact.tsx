@@ -1,8 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react'
 import mermaid from 'mermaid'
-import { Copy, Check, Eye, Code, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import { Copy, Check, Eye, Code } from 'lucide-react'
 import { CodeArtifact } from './CodeArtifact'
 import { v4 as uuidv4 } from 'uuid'
+
+// Initialize mermaid once at module level with the Cursed Blood dark theme
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#8B0000',
+    primaryTextColor: '#ffffff',
+    primaryBorderColor: '#FF2244',
+    lineColor: '#FF2244',
+    secondaryColor: '#5C1A2A',
+    tertiaryColor: '#1a050a',
+    background: '#050305',
+    mainBkg: '#1a050a',
+    nodeBorder: '#FF2244',
+  },
+  fontFamily: "'Nunito', 'Segoe UI', sans-serif",
+})
 
 export function MermaidArtifact({ language, code }: { language: string; code: string }) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
@@ -26,20 +44,6 @@ export function MermaidArtifact({ language, code }: { language: string; code: st
 
     const renderMermaid = async () => {
       try {
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: 'dark',
-          themeVariables: {
-            primaryColor: '#8B0000',
-            primaryTextColor: '#fff',
-            primaryBorderColor: '#FF2244',
-            lineColor: '#FF2244',
-            secondaryColor: '#5C1A2A',
-            tertiaryColor: '#1a050a'
-          },
-          fontFamily: "'Nunito', sans-serif"
-        })
-
         const { svg } = await mermaid.render(idRef.current, code)
         if (isMounted) {
           setSvgContent(svg)

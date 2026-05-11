@@ -21,6 +21,24 @@ export class OllamaService {
     }
   }
 
+  async warmup(model: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: ' ' }],
+          options: { num_predict: 1 },
+          stream: false
+        }),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
+  }
+
   async *streamChat(messages: any[], model: string, options: any = {}) {
     this.abortController = new AbortController()
     const response = await fetch(`${this.baseUrl}/api/chat`, {

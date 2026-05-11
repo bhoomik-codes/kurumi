@@ -10,6 +10,10 @@ export function registerOllamaIpc() {
     return await ollamaService.getModels()
   })
 
+  ipcMain.handle('ollama:warmup', async (_event, modelName: string) => {
+    return await ollamaService.warmup(modelName)
+  })
+
   // We use standard event messaging for streaming, not handle.
   ipcMain.on('ollama:chat:stream', async (event, args) => {
     const { messages, model, options, replyId } = args

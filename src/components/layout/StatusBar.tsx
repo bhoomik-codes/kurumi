@@ -4,8 +4,8 @@ import { useModelStore } from '../../stores/modelStore'
 import { Activity, Cpu, Database } from 'lucide-react'
 
 export default function StatusBar() {
-  const { systemStats } = useSettingsStore()
-  const { activeModel } = useModelStore()
+  const { systemStats, updateSystemStats } = useSettingsStore()
+  const { activeModel, isModelWarming } = useModelStore()
   const [ollamaStatus, setOllamaStatus] = useState<'connected' | 'disconnected'>('disconnected')
 
   useEffect(() => {
@@ -28,6 +28,21 @@ export default function StatusBar() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    // Poll system stats for status bar (VRAM/RAM)
+    const poll = async () => {
+      try {
+        const stats = await window.electron?.invoke('system:stats')
+        if (stats) updateSystemStats(stats)
+      } catch {
+        // ignore; keep last known values
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => clearInterval(interval)
+  }, [updateSystemStats])
+
   return (
     <footer className="h-8 flex items-center justify-between px-4 glass-surface border-t border-border-glass text-xs text-text-dim z-50">
       <div className="flex items-center gap-4">
@@ -42,6 +57,11 @@ export default function StatusBar() {
           <div className="flex items-center gap-1 border-l border-border-glass pl-4">
             <Database size={12} className="text-red-core" />
             <span className="text-text-secondary">{activeModel}</span>
+            {isModelWarming && (
+              <span className="ml-2 text-[10px] uppercase tracking-widest text-text-dim">
+                Setting up…
+              </span>
+            )}
           </div>
         )}
       </div>

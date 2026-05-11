@@ -1,11 +1,38 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Copy, Check, Eye, Code, RefreshCw } from 'lucide-react'
 import { CodeArtifact } from './CodeArtifact'
+
+// ── Offline React Artifact ─────────────────────────────────────────────────────
+// All scripts are loaded from bundled node_modules at render-time, then injected
+// as inline <script> tags inside the sandboxed iframe srcDoc so the CSP never
+// needs to allow external CDNs.  No network calls are made.
+//
+// Strategy:
+//  1. fetch() the UMD bundles as text from the dev server (Vite serves
+//     node_modules via /@fs/ in dev and they are inlined via import in prod).
+//  2. Inject them as <script> tags inside the srcdoc iframe.
+//
+// In production, Vite's ?raw imports load the file content at build time.
+// We use dynamic import to stay lazy (not in the main bundle critical path).
+
+async function loadInlineScripts(): Promise<{ react: string; reactDom: string; babel: string }> {
+  // Use Vite's ?raw importer to embed UMD file text at build time (zero network)
+  const [reactRaw, reactDomRaw, babelRaw] = await Promise.all([
+    import('react/umd/react.development.js?raw').then(m => m.default).catch(() => ''),
+    import('react-dom/umd/react-dom.development.js?raw').then(m => m.default).catch(() => ''),
+    import('@babel/standalone/babel.min.js?raw').then(m => m.default).catch(() => ''),
+  ])
+  return { react: reactRaw, reactDom: reactDomRaw, babel: babelRaw }
+}
+
+const SCRIPT_CACHE = { loaded: false, react: '', reactDom: '', babel: '' }
 
 export function ReactArtifact({ language, code }: { language: string; code: string }) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
   const [copied, setCopied] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [srcDoc, setSrcDoc] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code)
@@ -13,52 +40,75 @@ export function ReactArtifact({ language, code }: { language: string; code: stri
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // To properly sandbox React, we use a srcDoc iframe.
-  // In a full offline environment, these CDN links would be replaced by local assets served via an IPC protocol.
-  // We use Babel standalone to transpile the JSX in the browser inside the sandbox.
-  const srcDoc = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-        <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-        <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-          body { 
-            margin: 0; 
-            padding: 1rem; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #ffffff;
-            color: #1a1a1a;
-          }
-        </style>
-      </head>
-      <body>
-        <div id="root"></div>
-        <script type="text/babel">
-          try {
-            ${code}
-            
-            // Auto-mount the default export or a component named App
-            let ComponentToMount = null;
-            if (typeof App !== 'undefined') ComponentToMount = App;
-            else if (typeof defaultExport !== 'undefined') ComponentToMount = defaultExport;
-            
-            if (ComponentToMount) {
-              const root = ReactDOM.createRoot(document.getElementById('root'));
-              root.render(React.createElement(ComponentToMount));
-            } else {
-              document.getElementById('root').innerHTML = '<div style="color:red;padding:1rem;">Error: No component named App found to mount.</div>';
-            }
-          } catch (err) {
-            document.getElementById('root').innerHTML = '<div style="color:red;padding:1rem;font-family:monospace;">' + err.toString() + '</div>';
-          }
-        </script>
-      </body>
-    </html>
-  `
+  useEffect(() => {
+    let cancelled = false
+
+    async function buildSrcDoc() {
+      try {
+        if (!SCRIPT_CACHE.loaded) {
+          const scripts = await loadInlineScripts()
+          SCRIPT_CACHE.react = scripts.react
+          SCRIPT_CACHE.reactDom = scripts.reactDom
+          SCRIPT_CACHE.babel = scripts.babel
+          SCRIPT_CACHE.loaded = true
+        }
+
+        if (cancelled) return
+
+        // Build a fully self-contained HTML page with the user's component
+        const doc = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      margin: 0;
+      padding: 1rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+  </style>
+  <script>${SCRIPT_CACHE.react}</script>
+  <script>${SCRIPT_CACHE.reactDom}</script>
+  <script>${SCRIPT_CACHE.babel}</script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    try {
+      ${code}
+
+      // Mount: look for component named "App" or "default"
+      const ComponentToMount =
+        typeof App !== 'undefined' ? App :
+        typeof Default !== 'undefined' ? Default : null;
+
+      if (!ComponentToMount) {
+        document.getElementById('root').innerHTML =
+          '<div style="color:crimson;padding:1rem;font-family:monospace;">No component named <b>App</b> found to mount. Make sure your component is named <b>App</b>.</div>';
+      } else {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(ComponentToMount));
+      }
+    } catch (err) {
+      document.getElementById('root').innerHTML =
+        '<div style="color:crimson;padding:1rem;font-family:monospace;white-space:pre-wrap;"><b>Runtime Error:</b>\\n' + err.toString() + '</div>';
+    }
+  </script>
+</body>
+</html>`
+        setSrcDoc(doc)
+        setLoadError(null)
+      } catch (err: any) {
+        if (!cancelled) setLoadError(`Failed to load runtime: ${err.message}`)
+      }
+    }
+
+    buildSrcDoc()
+    return () => { cancelled = true }
+  }, [code, refreshKey])
 
   return (
     <div className="relative group/artifact my-4 rounded-xl overflow-hidden border border-border-glass bg-abyss flex flex-col shadow-lg">
@@ -87,7 +137,7 @@ export function ReactArtifact({ language, code }: { language: string; code: stri
             </button>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {viewMode === 'preview' && (
             <button
@@ -102,20 +152,28 @@ export function ReactArtifact({ language, code }: { language: string; code: stri
             onClick={handleCopy}
             className="flex items-center gap-1.5 text-[11px] text-text-dim hover:text-red-bright transition-colors"
           >
-            {copied ? <><Check size={12} className="text-green-400" /><span className="text-green-400">Copied!</span></> : <><Copy size={12} /> Copy Code</>}
+            {copied
+              ? <><Check size={12} className="text-green-400" /><span className="text-green-400">Copied!</span></>
+              : <><Copy size={12} /> Copy Code</>}
           </button>
         </div>
       </div>
 
-      <div className="relative min-h-[300px] w-full bg-[#f8f9fa] overflow-hidden">
+      <div className="relative min-h-[300px] w-full bg-white overflow-hidden">
         {viewMode === 'preview' ? (
-          <iframe
-            key={refreshKey}
-            srcDoc={srcDoc}
-            sandbox="allow-scripts"
-            className="w-full h-[400px] border-none"
-            title="React Preview"
-          />
+          loadError ? (
+            <div className="p-4 text-red-400 text-sm font-mono">{loadError}</div>
+          ) : srcDoc ? (
+            <iframe
+              key={refreshKey}
+              srcDoc={srcDoc}
+              sandbox="allow-scripts"
+              className="w-full h-[400px] border-none"
+              title="React Preview"
+            />
+          ) : (
+            <div className="p-4 text-text-dim text-sm animate-pulse">Building sandbox…</div>
+          )
         ) : (
           <div className="max-h-[500px] overflow-y-auto bg-black/40">
             <CodeArtifact language={language} code={code} />
