@@ -3,24 +3,17 @@ import { Copy, Check, Eye, Code, RefreshCw } from 'lucide-react'
 import { CodeArtifact } from './CodeArtifact'
 
 // ── Offline React Artifact ─────────────────────────────────────────────────────
-// All scripts are loaded from bundled node_modules at render-time, then injected
-// as inline <script> tags inside the sandboxed iframe srcDoc so the CSP never
-// needs to allow external CDNs.  No network calls are made.
-//
-// Strategy:
-//  1. fetch() the UMD bundles as text from the dev server (Vite serves
-//     node_modules via /@fs/ in dev and they are inlined via import in prod).
-//  2. Inject them as <script> tags inside the srcdoc iframe.
-//
-// In production, Vite's ?raw imports load the file content at build time.
-// We use dynamic import to stay lazy (not in the main bundle critical path).
+// UMD bundles (react, react-dom, @babel/standalone) are copied into
+// public/sandbox/ at build time. We fetch() them as plain static assets —
+// no Vite exports-map inspection, works in both dev and Electron prod builds.
+// React 18+ removed ./umd/* from its package.json exports map, so dynamic
+// import('react/umd/...') fails at Vite's import-analysis stage; fetch() bypasses that.
 
 async function loadInlineScripts(): Promise<{ react: string; reactDom: string; babel: string }> {
-  // Use Vite's ?raw importer to embed UMD file text at build time (zero network)
   const [reactRaw, reactDomRaw, babelRaw] = await Promise.all([
-    import('react/umd/react.development.js?raw').then(m => m.default).catch(() => ''),
-    import('react-dom/umd/react-dom.development.js?raw').then(m => m.default).catch(() => ''),
-    import('@babel/standalone/babel.min.js?raw').then(m => m.default).catch(() => ''),
+    fetch('/sandbox/react.development.js').then(r => r.text()),
+    fetch('/sandbox/react-dom.development.js').then(r => r.text()),
+    fetch('/sandbox/babel.min.js').then(r => r.text()),
   ])
   return { react: reactRaw, reactDom: reactDomRaw, babel: babelRaw }
 }
