@@ -40,6 +40,22 @@ This is not another ChatGPT wrapper. This is what happens when you build a local
 
 ---
 
+## ✦ Gallery
+
+### The Interface
+![Chat Empty](assets/screenshots/chat_empty.png)
+
+### Markdown & Artifacts
+![Chat Markdown](assets/screenshots/chat_markdown.png)
+
+### Universal Model Management
+![Models Page](assets/screenshots/models_page.png)
+
+### Built-in Model Store
+![Model Store](assets/screenshots/model_store.png)
+
+---
+
 ## ✦ Features That Hit Like a Domain Expansion
 
 ### 🧠 Universal Model Support
