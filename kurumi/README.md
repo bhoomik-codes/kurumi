@@ -43,15 +43,19 @@ This is not another ChatGPT wrapper. This is what happens when you build a local
 ## ✦ Gallery
 
 ### The Interface
+
 ![Chat Empty](assets/screenshots/chat_empty.png)
 
 ### Markdown & Artifacts
+
 ![Chat Markdown](assets/screenshots/chat_markdown.png)
 
 ### Universal Model Management
+
 ![Models Page](assets/screenshots/models_page.png)
 
 ### Built-in Model Store
+
 ![Model Store](assets/screenshots/model_store.png)
 
 ---
@@ -156,8 +160,8 @@ Every panel is layered glass. Every border glows like a cursed technique mid-act
 Phase 1 — Core Chat + Ollama Integration         [ COMPLETED ]
 Phase 2 — Document Intelligence + RAG            [ COMPLETED ]
 Phase 3 — Cloud LLM Integration (NVIDIA NIM)     [ COMPLETED ]
-Phase 4 — Artifact Rendering Engine              [ NEXT ]
-Phase 5 — Image Generation Studio               [ COMING SOON ]
+Phase 4 — Artifact Rendering Engine              [ IN PROGRESS / nested app ]
+Phase 5 — Image Generation Studio               [ CORE COMPLETE — A1111 + UI + Models integration ]
 Phase 6 — Polish, Animations, Power Features     [ COMING SOON ]
 Phase 7 — Packaged Releases (Win/Mac/Linux)      [ COMING SOON ]
 ```
@@ -226,7 +230,14 @@ npm run build:linux  # Linux
 
 ## ✦ Changelog
 
-### Phase 4.5 — Cloud Integration & Resilience (Latest)
+### Phase 4.75 — Image Generation Studio & model discovery (Latest)
+
+- **Automatic1111 bridge:** Main-process IPC for txt2img, img2img, listing checkpoints, and saving PNGs under app `userData/generated-images` (no CORS).
+- **Models page:** Separate **Image generation checkpoints** section — pick the active Stable Diffusion checkpoint for the studio (shared with Image Gen via `localStorage` + Zustand).
+- **Model Store:** **Search scope** strip — *All* / *Language · chat* / *Image · diffusion* — HuggingFace GGUF queries use `pipeline_tag` / hub filters; Ollama library cards are heuristically filtered client-side.
+- **ComfyUI:** Lightweight server probe only in this release (queue / workflow execution not shipped here).
+
+### Phase 4.5 — Cloud Integration & Resilience
 
 - **NVIDIA NIM Cloud API:** Added seamless dual-provider switching to flip between local Ollama models and lightning-fast cloud endpoints.
 - **Parallel Probing:** Smart model picker that probes availability in real-time, grays out plan-gated models, and defaults to working free-tier options.

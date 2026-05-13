@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useModelStore, LocalModel } from '../stores/modelStore'
-import { Brain, Zap, HardDrive, CheckCircle2, Download, Trash2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { Brain, Zap, HardDrive, CheckCircle2, Download, Trash2, RefreshCw, ChevronDown, ChevronUp, ImagePlus, Link2 } from 'lucide-react'
+
+const LS_IMG_BASE = 'kurumi.imageGen.baseUrl'
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '—'
@@ -116,13 +118,58 @@ function ModelCard({ model, isActive, onSelect, onDelete }: {
 }
 
 export default function Models() {
-  const { availableModels, activeModel, setAvailableModels, setActiveModel } = useModelStore()
+  const {
+    availableModels, activeModel, activeImageGenCheckpoint,
+    setAvailableModels, setActiveModel, setActiveImageGenCheckpoint,
+  } = useModelStore()
   const [isLoading, setIsLoading] = useState(true)
   const [pullModelName, setPullModelName] = useState('')
   const [isPulling, setIsPulling] = useState(false)
   const [pullStatus, setPullStatus] = useState('')
   const [pullPercent, setPullPercent] = useState<number | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
+  const [sdBaseUrl, setSdBaseUrl] = useState('http://127.0.0.1:7860')
+  const [sdCheckpoints, setSdCheckpoints] = useState<string[]>([])
+  const [sdLoading, setSdLoading] = useState(false)
+  const [sdError, setSdError] = useState('')
+
+  useEffect(() => {
+    try {
+      const u = localStorage.getItem(LS_IMG_BASE)
+      if (u) setSdBaseUrl(u)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const persistSdUrl = (url: string) => {
+    try {
+      localStorage.setItem(LS_IMG_BASE, url.trim())
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const fetchSdCheckpoints = async () => {
+    setSdLoading(true)
+    setSdError('')
+    persistSdUrl(sdBaseUrl)
+    try {
+      const res = await window.electron?.invoke('imagegen:sd-models', { baseUrl: sdBaseUrl.trim() })
+      if (res?.ok && Array.isArray(res.titles)) {
+        setSdCheckpoints(res.titles)
+      } else {
+        setSdError(res?.error || 'Could not load checkpoints')
+        setSdCheckpoints([])
+      }
+    } catch (e) {
+      setSdError(e instanceof Error ? e.message : String(e))
+      setSdCheckpoints([])
+    } finally {
+      setSdLoading(false)
+    }
+  }
 
   const fetchModels = async () => {
     setIsLoading(true)
@@ -249,6 +296,79 @@ export default function Models() {
                   </div>
                 )}
               </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-purple-900/40 bg-purple-950/20 p-5">
+            <h2 className="text-text-secondary text-sm font-semibold uppercase tracking-widest mb-1 flex items-center gap-2">
+              <ImagePlus size={14} className="text-purple-300" />
+              Image generation checkpoints
+            </h2>
+            <p className="text-xs text-text-dim mb-4 leading-relaxed">
+              Stable Diffusion checkpoints from your local{' '}
+              <span className="text-text-secondary">AUTOMATIC1111</span> WebUI (same URL as Image Gen).
+              Selecting one applies it on the next txt2img / img2img request.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1 flex items-center gap-2 rounded-lg border border-border-glass bg-black/30 px-3 py-2">
+                <Link2 size={14} className="text-text-dim flex-shrink-0" />
+                <input
+                  type="text"
+                  value={sdBaseUrl}
+                  onChange={(e) => setSdBaseUrl(e.target.value)}
+                  onBlur={() => persistSdUrl(sdBaseUrl)}
+                  placeholder="http://127.0.0.1:7860"
+                  className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-dim focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={fetchSdCheckpoints}
+                disabled={sdLoading}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-purple-700/50 text-purple-200
+                  hover:bg-purple-900/30 disabled:opacity-40 transition-all flex items-center justify-center gap-2"
+              >
+                <RefreshCw size={14} className={sdLoading ? 'animate-spin' : ''} />
+                {sdLoading ? 'Loading…' : 'Load checkpoints'}
+              </button>
+            </div>
+            {sdError && <p className="text-xs text-red-400 mb-3">{sdError}</p>}
+            {sdCheckpoints.length > 0 && (
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {sdCheckpoints.map((title) => {
+                  const active = activeImageGenCheckpoint === title
+                  return (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() => setActiveImageGenCheckpoint(title)}
+                      className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono transition-all
+                        ${active
+                          ? 'border-purple-400 bg-purple-900/40 text-purple-100 shadow-[0_0_12px_rgba(168,85,247,0.2)]'
+                          : 'border-border-glass bg-black/20 text-text-secondary hover:border-purple-800/60'
+                        }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate">{title}</span>
+                        {active && (
+                          <span className="flex-shrink-0 text-purple-300 flex items-center gap-1">
+                            <CheckCircle2 size={12} /> Active for Image Gen
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {activeImageGenCheckpoint && (
+              <button
+                type="button"
+                onClick={() => setActiveImageGenCheckpoint(null)}
+                className="mt-3 text-xs text-text-dim hover:text-red-bright/80 underline underline-offset-2"
+              >
+                Clear image-gen checkpoint selection
+              </button>
             )}
           </div>
 

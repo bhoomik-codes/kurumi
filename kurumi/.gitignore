@@ -86,6 +86,7 @@ $RECYCLE.BIN/
 # Vite / Electron build outputs
 dist/
 dist-electron/
+.vite/
 release/
 release-app/
 *.exe
@@ -94,12 +95,21 @@ release-app/
 *.deb
 *.rpm
 *.snap
+*.blockmap
+builder-debug.yml
+builder-effective-config.yaml
 
 # App local data
 userdata/
 userData/
 *.db
 *.db-journal
+
+# Image Gen / RAG — runtime data if ever copied into the repo
+generated-images/
+*.lance/
+lancedb/
+vectorstore/
 
 # ── Scratch / one-off scripts ─────────────────────────────────────────────────
 # Any Python, shell, or temp scripts sitting at the repo root or in scratch dirs

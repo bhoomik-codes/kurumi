@@ -6,6 +6,7 @@ import { registerStoreIpc } from './ipc/store.ipc'
 import { registerRagIpc } from './ipc/rag.ipc'
 import { registerSystemIpc } from './ipc/system.ipc'
 import { registerNvidiaIpc } from './ipc/nvidia.ipc'
+import { registerImageGenIpc } from './ipc/imagegen.ipc'
 
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
   registerRagIpc()
   registerSystemIpc()
   registerNvidiaIpc()
+  registerImageGenIpc()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

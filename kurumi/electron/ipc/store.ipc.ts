@@ -52,8 +52,9 @@ export function registerStoreIpc() {
   })
 
   // ─── HuggingFace Search ───────────────────────────────────────────────────
-  ipcMain.handle('store:hf:search', async (_event, { query = '', sort = 'downloads', limit = 24, page = 0 }: {
+  ipcMain.handle('store:hf:search', async (_event, { query = '', sort = 'downloads', limit = 24, page = 0, catalog = 'all' }: {
     query?: string; sort?: string; limit?: number; page?: number
+    catalog?: 'all' | 'language' | 'image'
   }) => {
     try {
       const params = new URLSearchParams({
@@ -66,6 +67,11 @@ export function registerStoreIpc() {
         config: 'false',
       })
       if (query) params.set('search', query)
+      if (catalog === 'language') {
+        params.set('pipeline_tag', 'text-generation')
+      } else if (catalog === 'image') {
+        params.set('filter', 'stable-diffusion')
+      }
 
       const res = await fetch(`${HF_API_URL}?${params}`, {
         headers: {
