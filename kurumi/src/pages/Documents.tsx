@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { Upload, FileText, Database, AlertCircle } from 'lucide-react'
 import RAGPanel from '../components/rag/RAGPanel'
@@ -18,9 +18,24 @@ export default function Documents() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const uploadMetaRef = useRef({ fileIndex: 0, fileCount: 1 })
 
   useEffect(() => {
     loadDocuments()
+  }, [])
+
+  useEffect(() => {
+    const unsub = window.electron?.on('rag:indexing-progress', (_e, p: { done?: number; total?: number }) => {
+      const total = p?.total ?? 0
+      if (total <= 0) return
+      const { fileIndex, fileCount } = uploadMetaRef.current
+      const chunkFrac = (p?.done ?? 0) / total
+      const overall = ((fileIndex + chunkFrac) / Math.max(1, fileCount)) * 100
+      setUploadProgress(Math.min(100, Math.round(overall)))
+    })
+    return () => {
+      unsub?.()
+    }
   }, [])
 
   const loadDocuments = async () => {
@@ -36,11 +51,13 @@ export default function Documents() {
 
     setIsUploading(true)
     setUploadProgress(0)
+    uploadMetaRef.current = { fileIndex: 0, fileCount: files.length }
 
     for (let i = 0; i < files.length; i++) {
+      uploadMetaRef.current.fileIndex = i
       const file = files[i] as File & { path: string }
       const docId = uuidv4()
-      
+
       try {
         await window.electron?.invoke('rag:index', {
           docId,
@@ -49,7 +66,7 @@ export default function Documents() {
           mimetype: file.type,
           sizeBytes: file.size
         })
-        setUploadProgress(((i + 1) / files.length) * 100)
+        setUploadProgress(Math.round(((i + 1) / files.length) * 100))
       } catch (err) {
         console.error('Failed to process document:', err)
       }

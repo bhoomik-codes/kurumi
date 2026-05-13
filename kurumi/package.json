@@ -13,7 +13,8 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "preview": "electron dist-electron/main.js",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild:natives": "electron-rebuild -f -w @lancedb/lancedb better-sqlite3"
   },
   "dependencies": {
     "@babel/standalone": "^7.24.0",
@@ -59,6 +60,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@types/better-sqlite3": "^7.6.0",
     "@types/d3": "^7.4.0",
     "@types/katex": "^0.16.0",

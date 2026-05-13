@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import { documentService } from '../services/DocumentService'
 import { dbService } from '../services/DatabaseService'
+import { workerManager } from '../services/WorkerManager'
 
 export function registerRagIpc() {
-  // Fast COUNT check — avoids embedding the query when no documents are indexed
   ipcMain.handle('docs:hasChunks', () => {
     try {
       const row = dbService.get(
@@ -17,16 +17,16 @@ export function registerRagIpc() {
 
   ipcMain.handle('docs:process', async (_, { docId, filePath, filename, mimetype, sizeBytes }) => {
     try {
-      return await documentService.processDocument(docId, filePath, filename, mimetype, sizeBytes)
+      return await workerManager.processDocument(docId, filePath, filename, mimetype, sizeBytes)
     } catch (error: any) {
       console.error('IPC docs:process error:', error)
       throw new Error(error.message)
     }
   })
-  // Phase 6 canonical aliases (kept alongside docs:* for backward compatibility)
+
   ipcMain.handle('rag:index', async (_, payload) => {
     try {
-      return await documentService.processDocument(
+      return await workerManager.processDocument(
         payload.docId,
         payload.filePath,
         payload.filename,
@@ -41,17 +41,18 @@ export function registerRagIpc() {
 
   ipcMain.handle('docs:search', async (_, query: string, limit: number = 3) => {
     try {
-      return await documentService.searchSimilar(query, limit)
+      return await workerManager.searchSimilar(query, limit)
     } catch (error: any) {
       console.error('IPC docs:search error:', error)
       throw new Error(error.message)
     }
   })
+
   ipcMain.handle('rag:search', async (_, query: string, opts?: { topK?: number; minScore?: number }) => {
     try {
       const topK = Math.max(1, Math.min(12, opts?.topK ?? 4))
       const minScore = Math.max(0, Math.min(1, opts?.minScore ?? 0.3))
-      return await documentService.searchSimilar(query, topK, minScore)
+      return await workerManager.searchSimilar(query, topK, minScore)
     } catch (error: any) {
       console.error('IPC rag:search error:', error)
       throw new Error(error.message)
@@ -69,7 +70,7 @@ export function registerRagIpc() {
 
   ipcMain.handle('docs:delete', async (_, docId: string) => {
     try {
-      return documentService.deleteDocument(docId)
+      return await workerManager.deleteDocument(docId)
     } catch (error: any) {
       console.error('IPC docs:delete error:', error)
       throw new Error(error.message)

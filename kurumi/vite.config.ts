@@ -38,6 +38,28 @@ export default defineConfig({
           options.reload()
         },
       },
+      {
+        entry: 'electron/worker/index.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              output: {
+                entryFileNames: 'worker.js',
+              },
+              external: [
+                '@lancedb/lancedb',
+                'better-sqlite3',
+                'electron-store',
+                'ollama',
+                'onnxruntime-node',
+                'sharp',
+                'pdf-parse',
+              ],
+            },
+          },
+        },
+      },
     ]),
     renderer(),
   ],

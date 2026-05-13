@@ -1,8 +1,6 @@
 import { connect, type Connection, type Table } from '@lancedb/lancedb'
-import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
-import { dbService } from './DatabaseService'
 
 export interface VectorSearchResult {
   id: string
@@ -15,7 +13,6 @@ export interface VectorSearchResult {
 
 const TABLE_NAME = 'chunks'
 
-/** Cosine distance returned by LanceDB is in [0, 2]; embeddings are L2-normalized. */
 function distanceToScore(distance: number): number {
   return 1 - distance
 }
@@ -24,19 +21,20 @@ function sqlQuote(id: string): string {
   return `'${id.replace(/'/g, "''")}'`
 }
 
-class VectorStore {
-  private storageDir: string
+/** LanceDB-backed store without SQLite; indexed doc scope is supplied per search by the caller. */
+export class VectorStoreCore {
+  private readonly storageDir: string
   private db: Connection | null = null
   private table: Table | null = null
   private readonly readyChain: Promise<void>
 
-  constructor() {
-    this.storageDir = join(app.getPath('userData'), 'vectorstore')
+  constructor(userDataRoot: string) {
+    this.storageDir = join(userDataRoot, 'vectorstore')
     mkdirSync(this.storageDir, { recursive: true })
     this.readyChain = this.connectDb()
   }
 
-  public getStorageDir() {
+  getStorageDir() {
     return this.storageDir
   }
 
@@ -50,7 +48,11 @@ class VectorStore {
     return this.db
   }
 
-  /** Open existing chunks table, if any. */
+  /** Opens the local Lance connection — verifies native bindings and disk path. */
+  async ping(): Promise<void> {
+    await this.ensureDb()
+  }
+
   private async openTableIfExists(): Promise<Table | null> {
     const conn = await this.ensureDb()
     const names = await conn.tableNames()
@@ -60,7 +62,7 @@ class VectorStore {
     return this.table
   }
 
-  public async insertChunk(params: {
+  async insertChunk(params: {
     id: string
     documentId: string
     filename?: string
@@ -91,24 +93,25 @@ class VectorStore {
     await tbl.add([row])
   }
 
-  public async deleteByDocumentId(documentId: string): Promise<void> {
+  async deleteByDocumentId(documentId: string): Promise<void> {
     const tbl = await this.openTableIfExists()
     if (!tbl) return
     await tbl.delete(`document_id = ${sqlQuote(documentId)}`)
   }
 
-  public async search(queryEmbedding: number[], topK = 4, minScore = 0.3): Promise<VectorSearchResult[]> {
+  async search(
+    queryEmbedding: number[],
+    topK: number,
+    minScore: number,
+    indexedDocumentIds: string[]
+  ): Promise<VectorSearchResult[]> {
     const tbl = await this.openTableIfExists()
-    if (!tbl) return []
-
-    const indexedRows = dbService.all(`SELECT id FROM documents WHERE status = 'indexed'`) as Array<{ id: string }>
-    const indexedIds = indexedRows.map((r) => r.id)
-    if (indexedIds.length === 0) return []
+    if (!tbl || indexedDocumentIds.length === 0) return []
 
     const maxDistance = 1 - minScore
     const poolLimit = Math.min(2000, Math.max(topK * 20, 80))
 
-    const inList = indexedIds.map(sqlQuote).join(', ')
+    const inList = indexedDocumentIds.map(sqlQuote).join(', ')
     const queryVec = Float32Array.from(queryEmbedding)
 
     const rows = await tbl
@@ -168,6 +171,19 @@ class VectorStore {
     }
     return picked
   }
-}
 
-export const vectorStore = new VectorStore()
+  close(): void {
+    try {
+      this.table?.close()
+    } catch {
+      /* ignore */
+    }
+    this.table = null
+    try {
+      this.db?.close()
+    } catch {
+      /* ignore */
+    }
+    this.db = null
+  }
+}

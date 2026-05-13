@@ -7,6 +7,8 @@ import { registerRagIpc } from './ipc/rag.ipc'
 import { registerSystemIpc } from './ipc/system.ipc'
 import { registerNvidiaIpc } from './ipc/nvidia.ipc'
 import { registerImageGenIpc } from './ipc/imagegen.ipc'
+import { workerManager } from './services/WorkerManager'
+import { appendRagWorkerLog } from './services/ragDiagnostics'
 
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
@@ -63,6 +65,10 @@ async function createWindow() {
 
 // App lifecycle
 app.whenReady().then(() => {
+  appendRagWorkerLog(
+    `Main process ready userData=${app.getPath('userData')} packaged=${app.isPackaged} exec=${process.execPath}`
+  )
+
   createWindow()
   registerSqliteIpc()
   registerOllamaIpc()
@@ -71,6 +77,12 @@ app.whenReady().then(() => {
   registerSystemIpc()
   registerNvidiaIpc()
   registerImageGenIpc()
+
+  void workerManager.runStartupHealthCheck().then((h) => {
+    if (!h.ok) {
+      console.error('[RAG] LanceDB / worker health check failed:', h.error)
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -81,6 +93,20 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+let ragWorkerQuitHandled = false
+app.on('before-quit', async (event) => {
+  if (ragWorkerQuitHandled) return
+  event.preventDefault()
+  ragWorkerQuitHandled = true
+  try {
+    await workerManager.shutdown()
+  } catch (e) {
+    console.error('[RAG worker] shutdown error:', e)
+  } finally {
     app.quit()
   }
 })
