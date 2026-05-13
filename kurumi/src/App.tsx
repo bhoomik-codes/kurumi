@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import TopBar from './components/layout/TopBar'
 import Sidebar from './components/layout/Sidebar'
 import StatusBar from './components/layout/StatusBar'
@@ -15,6 +16,7 @@ import OllamaSetup from './pages/OllamaSetup'
 export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-void text-text-primary font-sans">
+      <Toaster richColors theme="dark" position="top-center" closeButton />
       <ParticleBackground />
       
       <TopBar />

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Image as ImageIcon, Link2, Sparkles, Wand2, Save } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Image as ImageIcon, Link2, Sparkles, Wand2, Save, Download, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 import GlassPanel from '../components/ui/GlassPanel'
 import CursedButton from '../components/ui/CursedButton'
 import CursedInput from '../components/ui/CursedInput'
@@ -9,6 +10,7 @@ type Backend = 'automatic1111' | 'comfyui'
 
 const LS_BASE = 'kurumi.imageGen.baseUrl'
 const LS_BACKEND = 'kurumi.imageGen.backend'
+const LS_CKPT = 'kurumi.imageGen.checkpoint'
 
 const SAMPLERS = [
   'Euler a',
@@ -21,6 +23,10 @@ const SAMPLERS = [
 
 export default function ImageGen() {
   const { activeImageGenCheckpoint, setActiveImageGenCheckpoint } = useModelStore()
+  const probeSeqRef = useRef(0)
+  const checkpointSeqRef = useRef(0)
+  const generateSeqRef = useRef(0)
+  const importProfileRef = useRef<HTMLInputElement>(null)
   const [backend, setBackend] = useState<Backend>('automatic1111')
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:7860')
   const [mode, setMode] = useState<'txt2img' | 'img2img'>('txt2img')
@@ -70,11 +76,20 @@ export default function ImageGen() {
   }, [backend, baseUrl])
 
   const loadCheckpoints = useCallback(async () => {
+    const id = ++checkpointSeqRef.current
     try {
       const res = await window.electron?.invoke('imagegen:sd-models', { baseUrl: baseUrl.trim() })
-      if (res?.ok && Array.isArray(res.titles)) setLocalCheckpoints(res.titles)
-    } catch {
-      /* ignore */
+      if (id !== checkpointSeqRef.current) return
+      if (res?.ok && Array.isArray(res.titles)) {
+        setLocalCheckpoints(res.titles)
+      } else {
+        setLocalCheckpoints([])
+        toast.error(res?.error || 'Could not load checkpoints')
+      }
+    } catch (e) {
+      if (id !== checkpointSeqRef.current) return
+      setLocalCheckpoints([])
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }, [baseUrl])
 
@@ -96,6 +111,7 @@ export default function ImageGen() {
   }
 
   const runProbe = async () => {
+    const id = ++probeSeqRef.current
     setProbing(true)
     setProbeStatus(null)
     setProbeOk(null)
@@ -103,25 +119,37 @@ export default function ImageGen() {
     persistConnection()
     try {
       const res = await window.electron?.invoke('imagegen:probe', { backend, baseUrl: baseUrl.trim() })
+      if (id !== probeSeqRef.current) return
       setProbeOk(!!res?.ok)
       setProbeStatus(res?.message || 'No response')
+      if (res?.ok) {
+        toast.success(backend === 'automatic1111' ? 'WebUI reachable' : 'ComfyUI reachable')
+      } else {
+        toast.error(res?.message || 'Connection failed')
+      }
     } catch (e) {
+      if (id !== probeSeqRef.current) return
+      const msg = e instanceof Error ? e.message : String(e)
       setProbeOk(false)
-      setProbeStatus(e instanceof Error ? e.message : String(e))
+      setProbeStatus(msg)
+      toast.error(msg)
     } finally {
-      setProbing(false)
+      if (id === probeSeqRef.current) setProbing(false)
     }
   }
 
   const runGenerate = async () => {
     if (!prompt.trim()) {
       setError('Enter a prompt first.')
+      toast.error('Enter a prompt first.')
       return
     }
     if (mode === 'img2img' && !initB64) {
       setError('Choose an input image for img2img.')
+      toast.error('Choose an input image for img2img.')
       return
     }
+    const id = ++generateSeqRef.current
     setGenerating(true)
     setError(null)
     setImageDataUrl(null)
@@ -157,35 +185,115 @@ export default function ImageGen() {
                 denoising_strength: denoise,
               },
             })
+      if (id !== generateSeqRef.current) return
       if (!res?.ok) {
-        setError(res?.error || 'Generation failed')
+        const er = res?.error || 'Generation failed'
+        setError(er)
+        toast.error(er)
         return
       }
       const b64 = res.images?.[0]
       if (!b64) {
         setError('Empty image response')
+        toast.error('Empty image response')
         return
       }
       setImageDataUrl(`data:image/png;base64,${b64}`)
+      toast.success(mode === 'txt2img' ? 'Image generated' : 'Img2img complete')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (id !== generateSeqRef.current) return
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg)
+      toast.error(msg)
     } finally {
-      setGenerating(false)
+      if (id === generateSeqRef.current) setGenerating(false)
     }
+  }
+
+  const exportProfile = () => {
+    try {
+      let checkpoint = ''
+      try {
+        checkpoint = localStorage.getItem(LS_CKPT) || ''
+      } catch {
+        /* ignore */
+      }
+      const data = {
+        version: 1,
+        baseUrl: baseUrl.trim(),
+        backend,
+        checkpoint,
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'kurumi-imagegen-profile.json'
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Exported connection profile')
+    } catch {
+      toast.error('Could not export profile')
+    }
+  }
+
+  const onImportProfile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const j = JSON.parse(String(reader.result)) as {
+          baseUrl?: string
+          backend?: string
+          checkpoint?: string | null
+        }
+        if (typeof j.baseUrl === 'string' && j.baseUrl.trim()) {
+          setBaseUrl(j.baseUrl.trim())
+          localStorage.setItem(LS_BASE, j.baseUrl.trim())
+        }
+        if (j.backend === 'automatic1111' || j.backend === 'comfyui') {
+          setBackend(j.backend)
+          localStorage.setItem(LS_BACKEND, j.backend)
+        }
+        if (j.checkpoint === null || j.checkpoint === '') {
+          setActiveImageGenCheckpoint(null)
+        } else if (typeof j.checkpoint === 'string') {
+          setActiveImageGenCheckpoint(j.checkpoint)
+        }
+        setProbeOk(null)
+        setProbeStatus(null)
+        setLocalCheckpoints([])
+        toast.success('Profile imported — run Test connection')
+      } catch {
+        toast.error('Invalid profile JSON')
+      }
+    }
+    reader.readAsText(f)
   }
 
   const saveToDisk = async () => {
     if (!imageDataUrl) return
     const raw = imageDataUrl.includes(',') ? imageDataUrl.split(',')[1] : imageDataUrl
     const name = `kurumi-${mode}-${Date.now()}`
-    const res = await window.electron?.invoke('imagegen:save-image', {
-      base64Png: raw,
-      suggestedName: name,
-    })
-    if (res?.ok) {
-      setSaveMsg(`Saved to ${res.path}`)
-    } else {
-      setSaveMsg(res?.error || 'Save failed')
+    try {
+      const res = await window.electron?.invoke('imagegen:save-image', {
+        base64Png: raw,
+        suggestedName: name,
+      })
+      if (res?.ok) {
+        setSaveMsg(`Saved to ${res.path}`)
+        toast.success('PNG saved')
+      } else {
+        const er = res?.error || 'Save failed'
+        setSaveMsg(er)
+        toast.error(er)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setSaveMsg(msg)
+      toast.error(msg)
     }
   }
 
@@ -244,11 +352,36 @@ export default function ImageGen() {
               onChange={(e) => setBaseUrl(e.target.value)}
             />
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 items-center">
               <CursedButton type="button" variant="secondary" onClick={runProbe} isLoading={probing}>
                 Test connection
               </CursedButton>
+              <CursedButton type="button" variant="ghost" onClick={exportProfile} className="!px-3 text-xs">
+                <Download size={14} className="mr-1.5 inline" />
+                Export profile
+              </CursedButton>
+              <CursedButton
+                type="button"
+                variant="ghost"
+                onClick={() => importProfileRef.current?.click()}
+                className="!px-3 text-xs"
+              >
+                <Upload size={14} className="mr-1.5 inline" />
+                Import
+              </CursedButton>
+              <input
+                ref={importProfileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={onImportProfile}
+              />
             </div>
+            <p className="text-[11px] text-text-dim leading-snug">
+              Export/import moves URL, backend, and checkpoint between machines (JSON). Env overrides on the engine:
+              <code className="text-red-bright/80 mx-1">KURUMI_A1111_TIMEOUT_MS</code>,
+              <code className="text-red-bright/80 mx-1">KURUMI_A1111_PROBE_MS</code>.
+            </p>
 
             {probeStatus && (
               <p

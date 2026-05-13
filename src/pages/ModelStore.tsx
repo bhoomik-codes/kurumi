@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useModelStore } from '../stores/modelStore'
 import {
   Search, Download, CheckCircle2, Brain, Zap, HardDrive,
@@ -28,6 +28,21 @@ interface HFFile {
   filename: string
   quant: string
   size?: number
+}
+
+type ModelCatalog = 'all' | 'language' | 'image'
+
+function ollamaCatalogMatch(model: OllamaModel, catalog: ModelCatalog): boolean {
+  if (catalog === 'all') return true
+  const t = `${model.name} ${model.description}`.toLowerCase()
+  const vision =
+    /llava|bakllava|moondream|minicpm|vl-|vision|qwen.?vl|pixtral|llama3\.2-vision|internvl|glm-4v/.test(t)
+  const imageish =
+    vision ||
+    /\bflux\b|stable-diffusion|sdxl|\b(sd1|sd2|diffusion)\b/.test(t)
+  if (catalog === 'language') return !vision
+  if (catalog === 'image') return imageish
+  return true
 }
 
 // ─── Pull Progress Modal ───────────────────────────────────────────────────────
@@ -252,6 +267,7 @@ const HF_SORTS = [
 export default function ModelStore() {
   const { availableModels, setAvailableModels } = useModelStore()
   const [activeTab, setActiveTab] = useState<'ollama' | 'huggingface'>('ollama')
+  const [catalog, setCatalog] = useState<ModelCatalog>('all')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(0)
@@ -280,7 +296,7 @@ export default function ModelStore() {
   }, [search])
 
   // Reset page on filter change
-  useEffect(() => { setPage(0) }, [debouncedSearch, activeTab, hfSort])
+  useEffect(() => { setPage(0) }, [debouncedSearch, activeTab, hfSort, catalog])
 
   // Fetch installed models
   useEffect(() => {
@@ -297,11 +313,22 @@ export default function ModelStore() {
 
   const fetchHF = useCallback(async () => {
     setLoading(true); setError('')
-    const res = await window.electron?.invoke('store:hf:search', { query: debouncedSearch, sort: hfSort, limit: 24, page })
+    const res = await window.electron?.invoke('store:hf:search', {
+      query: debouncedSearch,
+      sort: hfSort,
+      limit: 24,
+      page,
+      catalog,
+    })
     if (res?.success) setHfModels(res.models)
     else setError(res?.error || 'Failed to load HuggingFace models')
     setLoading(false)
-  }, [debouncedSearch, hfSort, page])
+  }, [debouncedSearch, hfSort, page, catalog])
+
+  const filteredOllamaModels = useMemo(
+    () => ollamaModels.filter((m) => ollamaCatalogMatch(m, catalog)),
+    [ollamaModels, catalog]
+  )
 
   useEffect(() => {
     if (activeTab === 'ollama') fetchOllama()
@@ -355,6 +382,33 @@ export default function ModelStore() {
         </button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 px-6 py-2 border-b border-border-glass bg-black/25 shrink-0">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-text-dim">Search scope</span>
+        {([
+          { id: 'all' as const, label: 'All' },
+          { id: 'language' as const, label: 'Language / chat' },
+          { id: 'image' as const, label: 'Image & diffusion' },
+        ]).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setCatalog(opt.id)}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors
+              ${catalog === opt.id
+                ? 'border-red-bright/60 bg-red-core/25 text-red-bright'
+                : 'border-transparent text-text-dim hover:text-text-secondary hover:bg-white/5'
+              }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+        <span className="text-[10px] text-text-dim ml-auto max-w-xl text-right hidden lg:inline leading-snug">
+          {activeTab === 'ollama'
+            ? 'Ollama.com: narrows cards by name/description (e.g. hides vision models in Language).'
+            : 'HuggingFace GGUF: Language = text-generation pipeline; Image = stable-diffusion hub filter.'}
+        </span>
+      </div>
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
@@ -372,31 +426,37 @@ export default function ModelStore() {
         ) : (
           <>
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6">
-              {activeTab === 'ollama'
-                ? ollamaModels.map(m => (
+              {activeTab === 'ollama' ? (
+                filteredOllamaModels.length === 0 ? (
+                  <p className="col-span-full text-center text-sm text-text-dim py-8">
+                    No models match this scope for the current search. Try &quot;All&quot; or clear the search box.
+                  </p>
+                ) : (
+                  filteredOllamaModels.map((m) => (
                     <OllamaCard
                       key={m.name}
                       model={m}
                       installedTags={installedTags}
                       onInstall={() => {
-                        // For Ollama models, install the base tag — user can choose variant later
                         setPullTag({ tag: m.name, name: m.name })
                       }}
                     />
                   ))
-                : hfModels.map(m => (
-                    <HFCard
-                      key={m.id}
-                      model={m}
-                      installedTags={installedTags}
-                      onSelect={() => setHfPicker(m)}
-                    />
-                  ))
-              }
+                )
+              ) : (
+                hfModels.map((m) => (
+                  <HFCard
+                    key={m.id}
+                    model={m}
+                    installedTags={installedTags}
+                    onSelect={() => setHfPicker(m)}
+                  />
+                ))
+              )}
             </div>
 
             {/* Pagination */}
-            {((activeTab === 'ollama' && ollamaModels.length > 0) || (activeTab === 'huggingface' && hfModels.length > 0)) && (
+            {((activeTab === 'ollama' && filteredOllamaModels.length > 0) || (activeTab === 'huggingface' && hfModels.length > 0)) && (
               <div className="flex items-center justify-center gap-4 text-sm">
                 <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-glass text-text-secondary hover:text-red-bright hover:border-red-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors">

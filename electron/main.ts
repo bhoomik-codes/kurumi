@@ -4,6 +4,7 @@ import { registerSqliteIpc } from './ipc/sqlite.ipc'
 import { registerOllamaIpc } from './ipc/ollama.ipc'
 import { registerStoreIpc } from './ipc/store.ipc'
 import { registerSystemIpc } from './ipc/system.ipc'
+import { registerImageGenIpc } from './ipc/imagegen.ipc'
 
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
@@ -33,7 +34,7 @@ async function createWindow() {
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const isDev = !!process.env.VITE_DEV_SERVER_URL
     const csp = isDev 
-      ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: ws:; script-src 'self' 'unsafe-eval' 'unsafe-inline' http:; connect-src 'self' http://localhost:* ws://localhost:*;"
+      ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: ws:; script-src 'self' 'unsafe-eval' 'unsafe-inline' http:; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*;"
       : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
 
     callback({
@@ -65,6 +66,7 @@ app.whenReady().then(() => {
   registerOllamaIpc()
   registerStoreIpc()
   registerSystemIpc()
+  registerImageGenIpc()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

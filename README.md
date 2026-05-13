@@ -77,14 +77,21 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 - **Auto-scroll** — chat window follows the stream in real time
 - **Multi-turn memory** — full conversation history sent to the model on every message
 
+### 🖼️ Image Generation Studio
+- **Automatic1111** — txt2img and img2img with sampler / steps / CFG / size / seed, optional checkpoint override, denoise control for img2img
+- **Save to disk** — one-click export of the current preview into the app data directory as PNG
+- **ComfyUI** — quick connection test to a local Comfy server (full workflow queue is not wired in this build)
+
 ### 🧠 Model Management
 - **Installed models page** — see all local Ollama models with size, parameters, quantization level, and family
+- **Image checkpoints (A1111)** — separate panel to list Stable Diffusion checkpoints from your WebUI API and mark which one Image Gen should use
 - **One-click select** — switch active model from the Models page
 - **Pull new models** — download directly from inside the app with a real-time streaming progress bar (%)
 - **Delete models** — with double-confirm safety guard
 
 ### 🛍️ Model Store
 - **Dual-source browser** — browse live from **Ollama Library** and **HuggingFace Hub** simultaneously
+- **Catalog scope** — filter search results toward **language / chat models** vs **image & diffusion** (plus *All*) on both tabs
 - **HuggingFace GGUF search** — sorted by Most Downloaded / Liked / Newest
 - **Quantization picker** — see all available `.gguf` variants per HuggingFace model with file sizes
 - **Direct install** — `ollama pull hf.co/org/repo:Q4_K_M` wired directly to streaming progress modal
@@ -116,8 +123,8 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 ✅ Phase 5 — Conversation Sidebar with history, search, pin/delete
 ✅ Phase 5b — Markdown renderer + syntax highlighting + system prompt
 🔄 Phase 6 — Document Upload & RAG (PDF, DOCX, local vector search)
-⬜ Phase 7 — Artifact rendering (React live preview, Mermaid, LaTeX)
-⬜ Phase 8 — Image Generation Studio (Automatic1111 / ComfyUI)
+✅ Phase 7 — Artifact rendering (React live preview, Mermaid, LaTeX) — *see nested `kurumi/` app tree*
+✅ Phase 8 — Image Generation Studio (Automatic1111 core + ComfyUI probe; Models & Store integration)
 ⬜ Phase 9 — Voice input (Web Speech API + Whisper.cpp)
 ⬜ Phase 10 — Prompt Library, Personas, Model Comparison
 ⬜ Phase 11 — Packaged releases (Win / macOS / Linux)
@@ -145,6 +152,8 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 | Routing | React Router DOM | 6 |
 | Markdown | react-markdown + remark-gfm | Latest |
 | Syntax Highlighting | react-syntax-highlighter (Prism) | Latest |
+| Notifications | [Sonner](https://sonner.emilkowal.ski) | Latest |
+| Testing | [Vitest](https://vitest.dev) | 2 |
 | LLM Runtime | [Ollama](https://ollama.com) | Latest |
 | Database | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) + FTS5 | 9 |
 | Icons | [Lucide React](https://lucide.dev) | Latest |
@@ -163,12 +172,14 @@ local-guide/
     │   ├── main.ts            ← App lifecycle, window, CSP
     │   ├── preload.ts         ← Secure contextBridge IPC bridge
     │   ├── ipc/
-    │   │   ├── ollama.ipc.ts  ← Chat streaming, model list, pull, delete
-    │   │   ├── sqlite.ipc.ts  ← Conversation & message CRUD
-    │   │   └── store.ipc.ts   ← Ollama library + HuggingFace API proxy
+    │   │   ├── ollama.ipc.ts      ← Chat streaming, model list, pull, delete
+    │   │   ├── sqlite.ipc.ts      ← Conversation & message CRUD
+    │   │   ├── store.ipc.ts       ← Ollama library + HuggingFace API proxy
+    │   │   └── imagegen.ipc.ts    ← A1111 txt2img / img2img / checkpoints / save
     │   └── services/
-    │       ├── OllamaService.ts    ← fetch-based streaming client
-    │       └── DatabaseService.ts  ← SQLite init, schema, FTS5
+    │       ├── OllamaService.ts       ← fetch-based streaming client
+    │       ├── ImageGenService.ts     ← Stable Diffusion WebUI bridge
+    │       └── DatabaseService.ts     ← SQLite init, schema, FTS5
     ├── src/                   ← Renderer process (React)
     │   ├── pages/
     │   │   ├── Chat.tsx           ← Main chat interface
@@ -205,6 +216,8 @@ local-guide/
         └── screenshots/           ← README screenshots
 ```
 
+The primary development tree in this workspace is **`electron/` + `src/` at the repository root** (what `npm run dev` builds). A nested **`kurumi/`** directory mirrors many of the same pages for packaging or alternate workflows.
+
 ---
 
 ## ✦ Prerequisites
@@ -216,6 +229,8 @@ Before running KURUMI, ensure you have:
 | [Node.js](https://nodejs.org) | 20+ | LTS recommended |
 | [Ollama](https://ollama.com) | Latest | Must be running (`ollama serve`) |
 | At least one LLM | Any | `ollama pull llama3.2:3b` |
+| Optional: AUTOMATIC1111 WebUI | Local | For Image Gen (`--api` enabled; default port 7860) |
+| Optional: ComfyUI | Local | Connection test only in this build (port 8188 typical) |
 | Git | Any | For cloning |
 | RAM | 4 GB minimum | 8 GB+ recommended for 7B+ models |
 
@@ -276,7 +291,15 @@ Built artifacts are output to `dist/`.
 
 ## ✦ Changelog
 
-### `v0.5.0` — Markdown & System Prompt *(Latest)*
+### `v0.6.0` — Image Generation Studio & model discovery *(Latest)*
+- ✅ **Phase 8 (core):** Automatic1111 txt2img + img2img over local REST (`imagegen:*` IPC), PNG save to app `userData/generated-images`, checkpoint override via `override_settings`
+- ✅ **ComfyUI:** reachability probe (`/system_stats` / `/queue`); queue workflows not bundled in this release
+- ✅ **Models page:** dedicated **Image generation checkpoints** panel — load SD checkpoints from WebUI, pick active checkpoint for the studio (syncs with Image Gen)
+- ✅ **Model Store:** **Search scope** control — *All* / *Language · chat* / *Image · diffusion* (HuggingFace GGUF uses `pipeline_tag` / hub filters; Ollama library uses name heuristics)
+- ✅ **Image Gen UI:** generation mode toggle, denoising slider for img2img, optional checkpoint dropdown after connect
+- ✅ **Stability & feedback:** centralized IPC error logging with stack traces in dev, Sonner toasts for probe/generation/save failures, tunable A1111 timeouts via `KURUMI_A1111_TIMEOUT_MS` / `KURUMI_A1111_PROBE_MS`, and initial Vitest + CI coverage for imagegen payload helpers.
+
+### `v0.5.0` — Markdown & System Prompt
 - ✅ Full Markdown renderer with Cursed Blood syntax highlighting
 - ✅ Copy button on all code blocks
 - ✅ System prompt injected on every request (Kurumi persona + formatting rules)
@@ -321,12 +344,18 @@ Built artifacts are output to `dist/`.
 | Pay monthly for API access | Run everything on your hardware |
 | Your prompts train someone else's model | Nothing leaves your machine |
 | One model, take it or leave it | Switch between 50+ models in one click |
-| Basic chat UI | Rich Markdown, syntax highlighting, live artifacts (soon) |
+| Basic chat UI | Rich Markdown, syntax highlighting, live artifacts (nested `kurumi/` build) |
 | Upload files to third-party servers | Parse locally, embed locally, query locally (Phase 6) |
 | Generic grey interface | A UI you actually want to look at |
 | Closed source, black box | MIT licensed, fully auditable |
 
 ---
+
+## ✦ Developer notes
+
+- **Environment flags**: `KURUMI_A1111_TIMEOUT_MS` (txt2img/img2img timeout ceiling in ms), `KURUMI_A1111_PROBE_MS` (probe timeout ceiling in ms).
+- **Tests**: `npm run test` runs Vitest over Electron-side helpers (currently imagegen payloads); CI also runs `tsc` for renderer + Electron main.
+- **IPC logging**: all `imagegen:*` handlers use a shared `ipcLogger` for structured error events with messages and stack traces in development.
 
 ## ✦ Contributing
 

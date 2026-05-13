@@ -1,10 +1,14 @@
-#Agent
+# Agent / AI tooling (local only)
 .agent/
 .agent/**
 .cursor/
 .cursor/**
+.cursorrules/
+.cursorrules/**
 .antigravity/
 .antigravity/**
+.kilocode/
+.kilocode/**
 
 # Logs
 logs
@@ -121,6 +125,7 @@ dist
 # Vite / Vue / Electron
 dist/
 dist-electron/
+.vite/
 release/
 release-app/
 *.exe
@@ -129,9 +134,32 @@ release-app/
 *.deb
 *.rpm
 *.snap
+*.blockmap
+builder-debug.yml
+builder-effective-config.yaml
 
 # userData and local storage for dev
 userdata/
 userData/
 *.db
 *.db-journal
+
+# Image Gen / RAG — never commit runtime blobs if copied into the tree
+generated-images/
+*.lance/
+lancedb/
+vectorstore/
+
+# Test & E2E
+test-results/
+playwright-report/
+
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Other (local-only notes; remove lines if you want these tracked)
+CLAUDE.md
+AGENTS.md
+implementation_plan.md

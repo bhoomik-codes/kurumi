@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { useModelStore, LocalModel } from '../stores/modelStore'
 import { Brain, Zap, HardDrive, CheckCircle2, Download, Trash2, RefreshCw, ChevronDown, ChevronUp, ImagePlus, Link2 } from 'lucide-react'
 
@@ -133,6 +134,7 @@ export default function Models() {
   const [sdCheckpoints, setSdCheckpoints] = useState<string[]>([])
   const [sdLoading, setSdLoading] = useState(false)
   const [sdError, setSdError] = useState('')
+  const sdFetchSeqRef = useRef(0)
 
   useEffect(() => {
     try {
@@ -152,22 +154,30 @@ export default function Models() {
   }
 
   const fetchSdCheckpoints = async () => {
+    const id = ++sdFetchSeqRef.current
     setSdLoading(true)
     setSdError('')
     persistSdUrl(sdBaseUrl)
     try {
       const res = await window.electron?.invoke('imagegen:sd-models', { baseUrl: sdBaseUrl.trim() })
+      if (id !== sdFetchSeqRef.current) return
       if (res?.ok && Array.isArray(res.titles)) {
         setSdCheckpoints(res.titles)
+        toast.success(`Loaded ${res.titles.length} checkpoint(s)`)
       } else {
-        setSdError(res?.error || 'Could not load checkpoints')
+        const msg = res?.error || 'Could not load checkpoints'
+        setSdError(msg)
         setSdCheckpoints([])
+        toast.error(msg)
       }
     } catch (e) {
-      setSdError(e instanceof Error ? e.message : String(e))
+      if (id !== sdFetchSeqRef.current) return
+      const msg = e instanceof Error ? e.message : String(e)
+      setSdError(msg)
       setSdCheckpoints([])
+      toast.error(msg)
     } finally {
-      setSdLoading(false)
+      if (id === sdFetchSeqRef.current) setSdLoading(false)
     }
   }
 
@@ -299,6 +309,7 @@ export default function Models() {
             )}
           </div>
 
+          {/* Image generation checkpoints (Automatic1111) */}
           <div className="rounded-xl border border-purple-900/40 bg-purple-950/20 p-5">
             <h2 className="text-text-secondary text-sm font-semibold uppercase tracking-widest mb-1 flex items-center gap-2">
               <ImagePlus size={14} className="text-purple-300" />
