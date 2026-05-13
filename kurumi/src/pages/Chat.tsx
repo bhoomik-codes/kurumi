@@ -16,6 +16,17 @@ const PROVIDER_STYLES = {
 }
 
 export default function Chat() {
+  const parseMetadata = (raw: unknown) => {
+    if (!raw) return undefined
+    if (typeof raw === 'object') return raw
+    if (typeof raw !== 'string') return undefined
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return undefined
+    }
+  }
+
   const {
     messages,
     activeConversationId,
@@ -120,6 +131,7 @@ export default function Chat() {
             createdAt: m.created_at,
             tokenCount: m.token_count,
             generationMs: m.generation_ms,
+            metadata: parseMetadata(m.metadata),
           })))
         }
       }
@@ -175,13 +187,22 @@ export default function Chat() {
 
     // RAG context injection
     let systemPromptWithContext = KURUMI_SYSTEM_PROMPT
+    let ragSources: Array<{ filename: string; chunk_index: number; score: number }> = []
     try {
       const hasChunks = await window.electron?.invoke('docs:hasChunks')
       if (hasChunks) {
-        const chunks = await window.electron?.invoke('docs:search', content, ragTopK) as any[]
+        const chunks = await window.electron?.invoke('rag:search', content, {
+          topK: ragTopK,
+          minScore: ragMinScore,
+        }) as any[]
         if (chunks?.length) {
           const good = chunks.filter((c: any) => c.score >= ragMinScore)
           if (good.length) {
+            ragSources = good.map((c: any) => ({
+              filename: c.filename ?? 'Unknown',
+              chunk_index: c.chunk_index ?? -1,
+              score: c.score,
+            }))
             systemPromptWithContext +=
               `\n\n**DOCUMENT CONTEXT:**\nRelevant context from user's local knowledge base:\n\n${good.map((c: any) => c.content).join('\n\n---\n\n')}\n\nUse this context to answer if relevant.`
           }
@@ -204,9 +225,15 @@ export default function Chat() {
       const unsubDone = window.electron?.on(`nvidia:chat:done:${replyId}`, async () => {
         const { streamingContent: sc } = useChatStore.getState()
         const finalContent = sc.trim() || '_(No response received — model returned empty output. Check terminal for [NVIDIA] logs.)_'
+        const sourceBlock = ragSources.length
+          ? `\n\n### Sources\n${ragSources
+              .map((s) => `- \`${s.filename}\` (chunk ${s.chunk_index})`)
+              .join('\n')}`
+          : ''
         const msg: Message = {
           id: replyId, conversationId: conversationId!, role: 'assistant',
-          content: finalContent, model: nvidiaModel, createdAt: Date.now()
+          content: `${finalContent}${sourceBlock}`, model: nvidiaModel, createdAt: Date.now(),
+          metadata: ragSources.length ? { sources: ragSources } : undefined,
         }
         addMessage(msg)
         clearStreaming()
@@ -243,11 +270,17 @@ export default function Chat() {
       })
       const unsubDone = window.electron?.on(`ollama:chat:done:${replyId}`, async (_e, chunk: any) => {
         const { streamingContent: sc } = useChatStore.getState()
+        const sourceBlock = ragSources.length
+          ? `\n\n### Sources\n${ragSources
+              .map((s) => `- \`${s.filename}\` (chunk ${s.chunk_index})`)
+              .join('\n')}`
+          : ''
         const msg: Message = {
           id: replyId, conversationId: conversationId!, role: 'assistant',
-          content: sc, model: activeModel!, createdAt: Date.now(),
+          content: `${sc}${sourceBlock}`, model: activeModel!, createdAt: Date.now(),
           tokenCount: chunk.eval_count,
-          generationMs: chunk.eval_duration ? Math.round(chunk.eval_duration / 1000000) : undefined
+          generationMs: chunk.eval_duration ? Math.round(chunk.eval_duration / 1000000) : undefined,
+          metadata: ragSources.length ? { sources: ragSources } : undefined,
         }
         addMessage(msg)
         clearStreaming()
@@ -445,7 +478,7 @@ export default function Chat() {
           ) : (
             <div className="max-w-3xl mx-auto">
               {currentMessages.map(msg => (
-                <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
+                <MessageBubble key={msg.id} role={msg.role} content={msg.content} metadata={msg.metadata} />
               ))}
               {isStreaming && (
                 <MessageBubble role="assistant" content={streamingContent} isStreaming />

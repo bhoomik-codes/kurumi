@@ -21,12 +21,37 @@ export function registerRagIpc() {
       throw new Error(error.message)
     }
   })
+  // Phase 6 canonical aliases (kept alongside docs:* for backward compatibility)
+  ipcMain.handle('rag:index', async (_, payload) => {
+    try {
+      return await documentService.processDocument(
+        payload.docId,
+        payload.filePath,
+        payload.filename,
+        payload.mimetype,
+        payload.sizeBytes
+      )
+    } catch (error: any) {
+      console.error('IPC rag:index error:', error)
+      throw new Error(error.message)
+    }
+  })
 
   ipcMain.handle('docs:search', async (_, query: string, limit: number = 3) => {
     try {
       return await documentService.searchSimilar(query, limit)
     } catch (error: any) {
       console.error('IPC docs:search error:', error)
+      throw new Error(error.message)
+    }
+  })
+  ipcMain.handle('rag:search', async (_, query: string, opts?: { topK?: number; minScore?: number }) => {
+    try {
+      const topK = Math.max(1, Math.min(12, opts?.topK ?? 4))
+      const minScore = Math.max(0, Math.min(1, opts?.minScore ?? 0.3))
+      return await documentService.searchSimilar(query, topK, minScore)
+    } catch (error: any) {
+      console.error('IPC rag:search error:', error)
       throw new Error(error.message)
     }
   })

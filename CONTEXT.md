@@ -64,6 +64,11 @@ local-guide/
 - **Timeout tuning:** `KURUMI_A1111_TIMEOUT_MS` for txt2img/img2img, `KURUMI_A1111_PROBE_MS` for connectivity probes.
 - **User feedback:** Sonner toasts in the renderer surface probe / generation / save successes and failures.
 
+### Document Intelligence (Phase 6)
+- **RAG IPC:** canonical `rag:index` and `rag:search` channels are registered in `kurumi/electron/ipc/rag.ipc.ts` (legacy `docs:*` remains for compatibility).
+- **Service architecture:** `kurumi/electron/services/ParseService.ts`, `EmbeddingService.ts`, and `VectorStore.ts` handle extraction, embeddings, and ranked retrieval.
+- **Grounding:** chat responses include explicit `Sources` entries (`filename` + `chunk`) when local context is injected.
+
 ### IPC summary (root)
 | Channel | Purpose |
 |---------|---------|
@@ -83,7 +88,7 @@ local-guide/
 | Phase | Status | Notes |
 |-------|--------|--------|
 | 1–5b | Done | Scaffold through Markdown / sidebar (per README) |
-| 6 | In progress | RAG / documents (varies by tree) |
+| 6 | **Done** | Document intelligence finalized in `kurumi/` (RAG IPC, parsing, retrieval quality, source attribution) |
 | 7 | Done in `kurumi/src` | Artifacts + Mermaid + KaTeX in nested renderer |
 | 8 | **Done (core) in root** | A1111 txt2img/img2img + Models + Store scope; Comfy probe only |
 | 9+ | Planned | Voice, personas, releases, etc. |

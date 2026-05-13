@@ -8,6 +8,9 @@ class DatabaseService {
   constructor() {
     const dbPath = join(app.getPath('userData'), 'kurumi.db')
     this.db = new Database(dbPath)
+    this.db.pragma('journal_mode = WAL')
+    this.db.pragma('synchronous = NORMAL')
+    this.db.pragma('foreign_keys = ON')
     this.initSchema()
   }
 
@@ -64,6 +67,8 @@ class DatabaseService {
         embedding   TEXT NOT NULL,
         chunk_index INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
+      CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 
       -- Key-value settings store
       CREATE TABLE IF NOT EXISTS settings (

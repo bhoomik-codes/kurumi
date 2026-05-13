@@ -5,10 +5,12 @@ interface MessageBubbleProps {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   isStreaming?: boolean
+  metadata?: any
 }
 
-export default function MessageBubble({ role, content, isStreaming }: MessageBubbleProps) {
+export default function MessageBubble({ role, content, isStreaming, metadata }: MessageBubbleProps) {
   const isUser = role === 'user'
+  const sources = Array.isArray(metadata?.sources) ? metadata.sources : []
 
   return (
     <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-6 group`}>
@@ -45,7 +47,21 @@ export default function MessageBubble({ role, content, isStreaming }: MessageBub
           </p>
         ) : (
           // Assistant messages: full Markdown rendering
-          <MarkdownRenderer content={content} isStreaming={isStreaming} />
+          <>
+            <MarkdownRenderer content={content} isStreaming={isStreaming} />
+            {sources.length > 0 && (
+              <div className="mt-3 rounded-lg border border-red-vein/40 bg-red-core/5 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wider text-red-bright mb-1">Sources</p>
+                <ul className="text-xs text-text-secondary space-y-1">
+                  {sources.map((s: any, idx: number) => (
+                    <li key={`${s.filename}-${s.chunk_index}-${idx}`}>
+                      {s.filename} (chunk {s.chunk_index})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

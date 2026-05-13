@@ -122,7 +122,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 ✅ Phase 4 — Models page + Model Store (Ollama + HuggingFace live)
 ✅ Phase 5 — Conversation Sidebar with history, search, pin/delete
 ✅ Phase 5b — Markdown renderer + syntax highlighting + system prompt
-🔄 Phase 6 — Document Upload & RAG (PDF, DOCX, local vector search)
+✅ Phase 6 — Document Upload & RAG (PDF, DOCX, local vector search)
 ✅ Phase 7 — Artifact rendering (React live preview, Mermaid, LaTeX) — *see nested `kurumi/` app tree*
 ✅ Phase 8 — Image Generation Studio (Automatic1111 core + ComfyUI probe; Models & Store integration)
 ⬜ Phase 9 — Voice input (Web Speech API + Whisper.cpp)
@@ -291,7 +291,16 @@ Built artifacts are output to `dist/`.
 
 ## ✦ Changelog
 
-### `v0.6.0` — Image Generation Studio & model discovery *(Latest)*
+### `v0.6.1` — Phase 6 finalized: RAG hardening *(Latest)*
+- ✅ **RAG IPC integrity:** added canonical `rag:index` / `rag:search` channels (while keeping `docs:*` compatibility)
+- ✅ **Service split:** parsing, embedding, and vector retrieval extracted into dedicated services (`ParseService`, `EmbeddingService`, `VectorStore`)
+- ✅ **Quality controls:** tuned Top-K + minimum score filtering and source diversity to reduce noisy chunk injection
+- ✅ **Supported parsing verified:** PDF / DOCX / XLSX extraction pipeline and improved chunking defaults (~512-token chunks with overlap)
+- ✅ **Knowledge Base UI:** finalized panelized document manager with statuses and delete actions
+- ✅ **Grounded answers:** assistant output now appends a visible **Sources** section when RAG context is used
+- ✅ **Runtime stability:** indexing yields frequently to keep Electron responsive on large files and unloads embedding model after indexing
+
+### `v0.6.0` — Image Generation Studio & model discovery
 - ✅ **Phase 8 (core):** Automatic1111 txt2img + img2img over local REST (`imagegen:*` IPC), PNG save to app `userData/generated-images`, checkpoint override via `override_settings`
 - ✅ **ComfyUI:** reachability probe (`/system_stats` / `/queue`); queue workflows not bundled in this release
 - ✅ **Models page:** dedicated **Image generation checkpoints** panel — load SD checkpoints from WebUI, pick active checkpoint for the studio (syncs with Image Gen)

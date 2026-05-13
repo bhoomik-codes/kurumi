@@ -34,9 +34,17 @@ export function registerSqliteIpc() {
 
   ipcMain.handle('db:messages:insert', (e, args) => {
     const { id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata } = args
+    const attachmentsValue =
+      attachments == null || typeof attachments === 'string'
+        ? attachments
+        : JSON.stringify(attachments)
+    const metadataValue =
+      metadata == null || typeof metadata === 'string'
+        ? metadata
+        : JSON.stringify(metadata)
     dbService.run(
       'INSERT INTO messages (id, conversation_id, role, content, model, created_at, token_count, generation_ms, attachments, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata]
+      [id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachmentsValue, metadataValue]
     )
     return id
   })

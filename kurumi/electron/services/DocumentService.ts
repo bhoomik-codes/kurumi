@@ -1,61 +1,18 @@
 import { v4 as uuidv4 } from 'uuid'
-import fs from 'fs'
-import path from 'path'
-import pdfParse from 'pdf-parse'
-import mammoth from 'mammoth'
-import * as xlsx from 'xlsx'
 import { dbService } from './DatabaseService'
+import { parseService } from './ParseService'
+import { embeddingService } from './EmbeddingService'
+import { vectorStore } from './VectorStore'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ────────────────────────────────────────────────────────────────────────────
-const EMBEDDING_MODEL = 'nomic-embed-text'
-const OLLAMA_BASE_URL = 'http://localhost:11434'
-const CHUNK_CHARS = 1800     // ≈ 450 tokens at ~4 chars/token
-const CHUNK_OVERLAP = 200    // Overlap between consecutive chunks for context continuity
-
-// ────────────────────────────────────────────────────────────────────────────
-// Embedding helper — uses direct HTTP to avoid Ollama SDK version conflicts
-// ────────────────────────────────────────────────────────────────────────────
-async function getEmbedding(text: string): Promise<number[]> {
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: EMBEDDING_MODEL, prompt: text }),
-    // qwen3-embedding:latest is a 7.6B model — on CPU each chunk can take 30-120s.
-    // Node's default undici headers timeout is 30s which is far too short.
-    // We set 10 minutes to safely cover even the slowest hardware.
-    signal: AbortSignal.timeout(600_000)
-  })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`Embedding request failed (${response.status}): ${body}`)
-  }
-
-  const data = await response.json()
-
-  if (!data.embedding || !Array.isArray(data.embedding) || data.embedding.length === 0) {
-    throw new Error(`Ollama returned an empty embedding for model "${EMBEDDING_MODEL}". Is the model loaded?`)
-  }
-
-  return data.embedding as number[]
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Cosine similarity
-// ────────────────────────────────────────────────────────────────────────────
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, na = 0, nb = 0
-  const len = Math.min(a.length, b.length)
-  for (let i = 0; i < len; i++) {
-    dot += a[i] * b[i]
-    na  += a[i] * a[i]
-    nb  += b[i] * b[i]
-  }
-  if (na === 0 || nb === 0) return 0
-  return dot / (Math.sqrt(na) * Math.sqrt(nb))
-}
+// Approximate 512-token chunks with overlap for context continuity.
+const CHARS_PER_TOKEN = 4
+const CHUNK_TOKENS = 512
+const CHUNK_OVERLAP_TOKENS = 128
+const CHUNK_CHARS = CHUNK_TOKENS * CHARS_PER_TOKEN
+const CHUNK_OVERLAP = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN
 
 // ────────────────────────────────────────────────────────────────────────────
 // Text chunker — sliding window with overlap
@@ -104,61 +61,6 @@ function chunkText(text: string): string[] {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// File parser
-// ────────────────────────────────────────────────────────────────────────────
-async function parseFile(filePath: string): Promise<{ text: string; warning?: string }> {
-  const ext = path.extname(filePath).toLowerCase()
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`)
-  }
-
-  const buffer = fs.readFileSync(filePath)
-
-  switch (ext) {
-    case '.pdf': {
-      const data = await pdfParse(buffer)
-      const text = data.text?.trim() ?? ''
-      if (!text) {
-        return {
-          text: '',
-          warning: 'PDF appears to be image-only or encrypted — no extractable text found.'
-        }
-      }
-      return { text }
-    }
-
-    case '.docx': {
-      const result = await mammoth.extractRawText({ buffer })
-      return { text: result.value ?? '' }
-    }
-
-    case '.xlsx':
-    case '.xls': {
-      const workbook = xlsx.read(buffer, { type: 'buffer' })
-      let text = ''
-      workbook.SheetNames.forEach(sheetName => {
-        const sheet = workbook.Sheets[sheetName]
-        text += `Sheet: ${sheetName}\n${xlsx.utils.sheet_to_csv(sheet)}\n\n`
-      })
-      return { text }
-    }
-
-    case '.csv': {
-      return { text: buffer.toString('utf-8') }
-    }
-
-    case '.txt':
-    case '.md':
-    case '.json':
-      return { text: buffer.toString('utf-8') }
-
-    default:
-      throw new Error(`Unsupported file type: ${ext}`)
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // DocumentService
 // ────────────────────────────────────────────────────────────────────────────
 class DocumentService {
@@ -180,7 +82,7 @@ class DocumentService {
 
     try {
       // 2 — Parse
-      const { text, warning } = await parseFile(filePath)
+      const { text, warning } = await parseService.parseFile(filePath)
 
       if (!text || text.trim().length === 0) {
         // Mark as indexed with 0 chunks + warning in metadata
@@ -204,19 +106,20 @@ class DocumentService {
         return { success: true, chunks: 0, warning: 'Text extracted but no usable chunks.' }
       }
 
-      // 4 — Embed and store each chunk
+      // 4 — Embed and store each chunk (yielding frequently for responsiveness)
       let i = 0
       for (const chunk of chunks) {
-        const embedding = await getEmbedding(chunk)
-        dbService.run(
-          `INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index) VALUES (?, ?, ?, ?, ?)`,
-          [uuidv4(), docId, chunk, JSON.stringify(embedding), i]
-        )
+        const embedding = await embeddingService.embedText(chunk)
+        vectorStore.insertChunk({
+          id: uuidv4(),
+          documentId: docId,
+          content: chunk,
+          embedding,
+          chunkIndex: i,
+        })
         i++
-
-        // Yield every 5 chunks so the Electron main process stays responsive
-        if (i % 5 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0))
+        if (i % 2 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve))
         }
       }
 
@@ -236,6 +139,9 @@ class DocumentService {
         [JSON.stringify({ error: error.message }), docId]
       )
       throw error
+    } finally {
+      // Release embedding model from RAM after indexing to keep memory for chat LLMs.
+      embeddingService.unload()
     }
   }
 
@@ -243,35 +149,14 @@ class DocumentService {
     query: string,
     limit = 3,
     minScore = 0.25
-  ): Promise<Array<{ id: string; document_id: string; content: string; score: number }>> {
+  ): Promise<Array<{ id: string; document_id: string; filename: string; content: string; chunk_index: number; score: number }>> {
     console.log(`[RAG] Searching: "${query}"`)
 
-    const queryEmbedding = await getEmbedding(query)
-
-    // Load all chunks from SQLite (brute-force cosine search — fast enough up to ~50k chunks)
-    const allChunks = dbService.all(
-      `SELECT id, document_id, content, embedding FROM document_chunks`
-    ) as Array<{ id: string; document_id: string; content: string; embedding: string }>
-
-    if (allChunks.length === 0) {
+    const queryEmbedding = await embeddingService.embedText(query)
+    if (!queryEmbedding.length) {
       return []
     }
-
-    const scored = allChunks.map(row => {
-      const embedding = JSON.parse(row.embedding) as number[]
-      return {
-        id: row.id,
-        document_id: row.document_id,
-        content: row.content,
-        score: cosineSimilarity(queryEmbedding, embedding)
-      }
-    })
-
-    // Sort descending, filter below threshold, return top K
-    return scored
-      .sort((a, b) => b.score - a.score)
-      .filter(c => c.score >= minScore)
-      .slice(0, limit)
+    return vectorStore.search(queryEmbedding, limit, minScore)
   }
 
   public getDocuments() {
