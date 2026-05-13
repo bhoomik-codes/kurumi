@@ -14,7 +14,15 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['better-sqlite3', 'electron-store', 'ollama', 'onnxruntime-node', 'sharp', 'pdf-parse'],
+              external: [
+              '@lancedb/lancedb',
+              'better-sqlite3',
+              'electron-store',
+              'ollama',
+              'onnxruntime-node',
+              'sharp',
+              'pdf-parse',
+            ],
             },
           },
         },

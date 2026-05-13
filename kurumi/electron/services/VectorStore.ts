@@ -1,3 +1,4 @@
+import { connect, type Connection, type Table } from '@lancedb/lancedb'
 import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
@@ -12,85 +13,145 @@ export interface VectorSearchResult {
   score: number
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0
-  let na = 0
-  let nb = 0
-  const len = Math.min(a.length, b.length)
-  for (let i = 0; i < len; i++) {
-    dot += a[i] * b[i]
-    na += a[i] * a[i]
-    nb += b[i] * b[i]
-  }
-  if (na === 0 || nb === 0) return 0
-  return dot / (Math.sqrt(na) * Math.sqrt(nb))
+const TABLE_NAME = 'chunks'
+
+/** Cosine distance returned by LanceDB is in [0, 2]; embeddings are L2-normalized. */
+function distanceToScore(distance: number): number {
+  return 1 - distance
+}
+
+function sqlQuote(id: string): string {
+  return `'${id.replace(/'/g, "''")}'`
 }
 
 class VectorStore {
   private storageDir: string
+  private db: Connection | null = null
+  private table: Table | null = null
+  private readonly readyChain: Promise<void>
 
   constructor() {
     this.storageDir = join(app.getPath('userData'), 'vectorstore')
     mkdirSync(this.storageDir, { recursive: true })
+    this.readyChain = this.connectDb()
   }
 
   public getStorageDir() {
     return this.storageDir
   }
 
-  public insertChunk(params: {
+  private async connectDb(): Promise<void> {
+    this.db = await connect(this.storageDir)
+  }
+
+  private async ensureDb(): Promise<Connection> {
+    await this.readyChain
+    if (!this.db) throw new Error('LanceDB connection failed')
+    return this.db
+  }
+
+  /** Open existing chunks table, if any. */
+  private async openTableIfExists(): Promise<Table | null> {
+    const conn = await this.ensureDb()
+    const names = await conn.tableNames()
+    if (!names.includes(TABLE_NAME)) return null
+    if (this.table?.isOpen()) return this.table
+    this.table = await conn.openTable(TABLE_NAME)
+    return this.table
+  }
+
+  public async insertChunk(params: {
     id: string
     documentId: string
+    filename?: string
     content: string
     embedding: number[]
     chunkIndex: number
-  }): void {
-    dbService.run(
-      `INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index) VALUES (?, ?, ?, ?, ?)`,
-      [
-        params.id,
-        params.documentId,
-        params.content,
-        JSON.stringify(params.embedding),
-        params.chunkIndex,
-      ]
-    )
+  }): Promise<void> {
+    const conn = await this.ensureDb()
+    const metadata = JSON.stringify({
+      document_id: params.documentId,
+      filename: params.filename ?? '',
+      page_index: params.chunkIndex,
+    })
+    const row = {
+      id: params.id,
+      vector: Float32Array.from(params.embedding),
+      content: params.content,
+      document_id: params.documentId,
+      metadata,
+    }
+
+    let tbl = await this.openTableIfExists()
+    if (!tbl) {
+      tbl = await conn.createTable(TABLE_NAME, [row])
+      this.table = tbl
+      return
+    }
+    await tbl.add([row])
   }
 
-  public search(queryEmbedding: number[], topK = 4, minScore = 0.3): VectorSearchResult[] {
-    const rows = dbService.all(
-      `SELECT c.id, c.document_id, c.content, c.embedding, c.chunk_index, d.filename
-       FROM document_chunks c
-       JOIN documents d ON d.id = c.document_id
-       WHERE d.status = 'indexed'`
-    ) as Array<{
-      id: string
-      document_id: string
-      content: string
-      embedding: string
-      chunk_index: number
-      filename: string
-    }>
+  public async deleteByDocumentId(documentId: string): Promise<void> {
+    const tbl = await this.openTableIfExists()
+    if (!tbl) return
+    await tbl.delete(`document_id = ${sqlQuote(documentId)}`)
+  }
 
-    const scored = rows
-      .map((r) => {
-        const emb = JSON.parse(r.embedding) as number[]
-        return {
-          id: r.id,
-          document_id: r.document_id,
-          filename: r.filename,
-          content: r.content,
-          chunk_index: r.chunk_index,
-          score: cosineSimilarity(queryEmbedding, emb),
+  public async search(queryEmbedding: number[], topK = 4, minScore = 0.3): Promise<VectorSearchResult[]> {
+    const tbl = await this.openTableIfExists()
+    if (!tbl) return []
+
+    const indexedRows = dbService.all(`SELECT id FROM documents WHERE status = 'indexed'`) as Array<{ id: string }>
+    const indexedIds = indexedRows.map((r) => r.id)
+    if (indexedIds.length === 0) return []
+
+    const maxDistance = 1 - minScore
+    const poolLimit = Math.min(2000, Math.max(topK * 20, 80))
+
+    const inList = indexedIds.map(sqlQuote).join(', ')
+    const queryVec = Float32Array.from(queryEmbedding)
+
+    const rows = await tbl
+      .vectorSearch(queryVec)
+      .column('vector')
+      .distanceType('cosine')
+      .where(`document_id IN (${inList})`)
+      .distanceRange(0, maxDistance)
+      .limit(poolLimit)
+      .select(['id', 'content', 'metadata', 'document_id', '_distance'])
+      .toArray()
+
+    const scored: VectorSearchResult[] = []
+    for (const row of rows) {
+      const dist = Number(row._distance)
+      if (!Number.isFinite(dist)) continue
+      const score = distanceToScore(dist)
+      let filename = ''
+      let chunk_index = 0
+      try {
+        const meta = JSON.parse(String(row.metadata ?? '{}')) as {
+          filename?: string
+          page_index?: number
         }
+        filename = meta.filename ?? ''
+        chunk_index = meta.page_index ?? 0
+      } catch {
+        /* keep defaults */
+      }
+      scored.push({
+        id: String(row.id),
+        document_id: String(row.document_id ?? ''),
+        filename,
+        content: String(row.content ?? ''),
+        chunk_index,
+        score,
       })
-      .filter((r) => Number.isFinite(r.score))
-      .sort((a, b) => b.score - a.score)
-      .filter((r) => r.score >= minScore)
+    }
+
+    scored.sort((a, b) => b.score - a.score)
 
     if (scored.length <= topK) return scored
 
-    // Keep diverse sources first to reduce redundant nearby chunks.
     const picked: VectorSearchResult[] = []
     const seenDoc = new Set<string>()
     for (const item of scored) {

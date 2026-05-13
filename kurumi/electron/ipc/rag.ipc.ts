@@ -6,7 +6,9 @@ export function registerRagIpc() {
   // Fast COUNT check — avoids embedding the query when no documents are indexed
   ipcMain.handle('docs:hasChunks', () => {
     try {
-      const row = dbService.get(`SELECT COUNT(*) as count FROM document_chunks`) as { count: number }
+      const row = dbService.get(
+        `SELECT COUNT(*) as count FROM documents WHERE status = 'indexed' AND COALESCE(chunk_count, 0) > 0`
+      ) as { count: number }
       return row.count > 0
     } catch {
       return false

@@ -110,9 +110,10 @@ class DocumentService {
       let i = 0
       for (const chunk of chunks) {
         const embedding = await embeddingService.embedText(chunk)
-        vectorStore.insertChunk({
+        await vectorStore.insertChunk({
           id: uuidv4(),
           documentId: docId,
+          filename,
           content: chunk,
           embedding,
           chunkIndex: i,
@@ -156,7 +157,7 @@ class DocumentService {
     if (!queryEmbedding.length) {
       return []
     }
-    return vectorStore.search(queryEmbedding, limit, minScore)
+    return await vectorStore.search(queryEmbedding, limit, minScore)
   }
 
   public getDocuments() {
@@ -165,8 +166,8 @@ class DocumentService {
     )
   }
 
-  public deleteDocument(docId: string) {
-    // Cascade deletes document_chunks via FK constraint
+  public async deleteDocument(docId: string) {
+    await vectorStore.deleteByDocumentId(docId)
     dbService.run(`DELETE FROM documents WHERE id = ?`, [docId])
     return { success: true }
   }

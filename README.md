@@ -110,6 +110,8 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 - **SQLite database** — all conversations and messages stored locally via `better-sqlite3`
 - **Full-text search** — FTS5 index on message content
 - **Conversation hydration** — last conversation automatically restored on app restart
+- **LanceDB vector store (Phase 6 RAG)** — document embeddings and chunk text persist under the app data directory at `vectorstore/` (next to the SQLite DB). Similarity search uses cosine distance with `topK` / `minScore` pushed into LanceDB (`distanceRange` + indexed-document filters). Chunk metadata (`document_id`, `filename`, `page_index` as chunk order) is stored as JSON in the `metadata` column for Sources in chat.
+- **Native modules** — `@lancedb/lancedb` ships platform binaries; `npm install` runs `electron-builder install-app-deps` so bindings match Electron. If you change Electron versions or hit ABI errors on Linux (e.g. Fedora), run `npm run postinstall` or `npx electron-rebuild -f -w @lancedb/lancedb`.
 
 ---
 
@@ -156,6 +158,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 | Testing | [Vitest](https://vitest.dev) | 2 |
 | LLM Runtime | [Ollama](https://ollama.com) | Latest |
 | Database | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) + FTS5 | 9 |
+| RAG / vectors | [LanceDB](https://lancedb.github.io/lancedb/) (`@lancedb/lancedb`, embedded) | 0.27 |
 | Icons | [Lucide React](https://lucide.dev) | Latest |
 | IDs | uuid v4 | 9 |
 

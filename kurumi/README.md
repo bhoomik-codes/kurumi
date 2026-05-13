@@ -70,7 +70,7 @@ Need a boost? Optionally connect an **NVIDIA NIM API key** to seamlessly fallbac
 
 ### 📄 Document Intelligence
 
-Drop in a **PDF, Word doc, Excel sheet, CSV, PowerPoint, or image** and ask anything about it. KURUMI parses, chunks, embeds, and stores your documents locally using a full RAG pipeline — embeddings generated on-device, indexed into a local vector store. Your files never leave your machine. Not even close.
+Drop in a **PDF, Word doc, Excel sheet, CSV, PowerPoint, or image** and ask anything about it. KURUMI parses, chunks, embeds, and stores your documents locally using a full RAG pipeline — embeddings generated on-device, persisted in **LanceDB** under `userData/vectorstore` with cosine similarity retrieval and chunk metadata for Sources. Your files never leave your machine. Not even close.
 
 > Supports: `.pdf` · `.docx` · `.xlsx` · `.csv` · `.pptx` · `.txt` · `.md` · `.png` · `.jpg` · `.webp`
 
