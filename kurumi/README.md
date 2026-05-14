@@ -228,6 +228,25 @@ npm run build:linux  # Linux
 
 ---
 
+## 🛠️ Troubleshooting Windows Installation
+
+If you encounter a "JavaScript Error occurred in the main process" upon launching KURUMI, follow these steps to stabilize the domain:
+
+1. **Install Visual C++ Redistributable**
+   Most native errors are caused by missing system libraries. Download and install the Microsoft Visual C++ Redistributable (specifically the x64 version).
+   [Download from Microsoft](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+
+2. **Clear Corrupted AppData**
+   If the app was previously installed or a build failed, old database files might be "cursed."
+   - Press Win + R, type `%AppData%`, and hit Enter.
+   - Find the `kurumi` folder and delete it.
+   - Restart the application.
+
+3. **Run as Administrator**
+   Sometimes Windows prevents the RAG Worker from writing to the local vector store. Right-click the KURUMI icon and select "Run as Administrator" to grant it the necessary permissions for the first run.
+
+---
+
 ## ✦ Changelog
 
 ### Phase 4.75 — Image Generation Studio & model discovery (Latest)

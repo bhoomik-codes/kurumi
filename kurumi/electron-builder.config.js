@@ -13,7 +13,7 @@ module.exports = {
   asar: true,
   asarUnpack: [
     '**/dist-electron/worker.js',
-    '**/node_modules/@lancedb/**/*',
+    '**/node_modules/@lancedb/lancedb/**/*',
     '**/node_modules/better-sqlite3/**/*',
     '**/node_modules/onnxruntime-node/**/*',
     '**/node_modules/sharp/**/*',

@@ -91,11 +91,17 @@ export class WorkerManager {
     appendRagWorkerLog(
       `Spawning utility process script=${workerPath} userData=${app.getPath('userData')} packaged=${app.isPackaged}`
     )
+    const env: Record<string, string> = {
+      ...process.env,
+      KURUMI_USER_DATA: app.getPath('userData'),
+    } as Record<string, string>
+
+    if (app.isPackaged) {
+      env.NODE_PATH = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
+    }
+
     const child = utilityProcess.fork(workerPath, [], {
-      env: {
-        ...process.env,
-        KURUMI_USER_DATA: app.getPath('userData'),
-      },
+      env,
       serviceName: 'KURUMI RAG Worker',
       stdio: 'pipe',
     })
