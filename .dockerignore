@@ -1,0 +1,14 @@
+.git
+.github
+**/node_modules
+**/dist
+**/dist-electron
+**/.vite
+**/*.log
+kurumi/coverage
+kurumi/test-results
+*.exe
+*.AppImage
+*.dmg
+*.blockmap
+agent-transcripts

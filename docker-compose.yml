@@ -1,0 +1,54 @@
+# KURUMI (kurumi/) — Electron + native LanceDB / SQLite inside Linux containers.
+# Build from repository root:  docker compose up --build
+
+services:
+  kurumi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kurumi:local
+    container_name: kurumi-app
+    shm_size: "1gb"
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      KURUMI_DOCKER: "1"
+      KURUMI_DEBUG_WORKER: ${KURUMI_DEBUG_WORKER:-1}
+      KURUMI_GUI_MODE: ${KURUMI_GUI_MODE:-x11}
+      KURUMI_NOVNC_PORT: ${KURUMI_NOVNC_PORT:-6080}
+      KURUMI_VNC_DISPLAY: ${KURUMI_VNC_DISPLAY:-:1}
+      KURUMI_VNC_GEOMETRY: ${KURUMI_VNC_GEOMETRY:-1400x900}
+      XDG_CONFIG_HOME: /kurumi/persist
+    volumes:
+      - kurumi-userdata:/kurumi/persist
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5173:5173"
+      - "6080:6080"
+    stdin_open: true
+    tty: true
+
+  # ---------------------------------------------------------------------------
+  # Optional all-in-one Ollama (GPU). Enable with:
+  #   docker compose --profile ollama-gpu up --build
+  # Then set KURUMI's Ollama URL (Settings) to: http://ollama-service:11434
+  # ---------------------------------------------------------------------------
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: kurumi-ollama
+    profiles:
+      - ollama-gpu
+    gpus:
+      - driver: nvidia
+        count: all
+        capabilities: [gpu]
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+volumes:
+  kurumi-userdata:
+  ollama-models:

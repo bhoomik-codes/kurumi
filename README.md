@@ -239,6 +239,107 @@ Before running KURUMI, ensure you have:
 
 ---
 
+## 🐳 Docker Setup
+
+Run the full **nested** KURUMI tree under [`kurumi/`](kurumi/) (Electron 30, `@lancedb/lancedb`, `better-sqlite3`, RAG utility process) inside a Debian Bookworm + Node 20 image. Native modules are rebuilt with `electron-rebuild` in the container so binaries match the Linux glibc inside the image—no more host/ABI mismatch.
+
+### Prerequisites (Docker path only)
+
+- [Docker Engine](https://docs.docker.com/engine/install/) 24+
+- [Docker Compose](https://docs.docker.com/compose/install/) v2 (`docker compose`)
+
+You do **not** need Node.js or a local `npm install` on the host for this path.
+
+### Build and run
+
+From the **repository root** (where `docker-compose.yml` lives):
+
+```bash
+docker compose up --build
+```
+
+On first launch, allow the GUI stack to finish compiling; the Electron window should appear on your display (X11) or in the browser (noVNC), depending on `KURUMI_GUI_MODE` below.
+
+### Data persistence
+
+Compose mounts a named volume on `XDG_CONFIG_HOME=/kurumi/persist`. Electron resolves `app.getPath('userData')` to `/kurumi/persist/kurumi`, which holds:
+
+- SQLite (`kurumi.db`) and FTS index
+- LanceDB / `vectorstore/`
+- Hugging Face cache for embeddings (`hf-cache/`)
+- Logs such as `logs/rag-worker.log`
+
+The volume `kurumi-userdata` survives `docker compose down`; remove it only if you intend to wipe local data: `docker volume rm local-guide_kurumi-userdata` (prefix may match your project directory name).
+
+### GUI: X11 (default)
+
+The compose file passes through `DISPLAY` and `/tmp/.X11-unix` so the container draws on your host X server.
+
+**Fedora / Linux (host X11)**
+
+```bash
+xhost +local:docker
+docker compose up --build
+```
+
+If the window does not appear, confirm `echo $DISPLAY` (often `:0` or `:1`) and that you are in the same graphical session.
+
+**Windows (VcXsrv or Xming)**
+
+1. Start VcXsrv (or Xming) with “Disable access control” or add your Docker/WSL subnet to X11 access control.
+2. Set `DISPLAY` before compose, e.g. `set DISPLAY=host.docker.internal:0` in **cmd**, or in PowerShell: `$env:DISPLAY='host.docker.internal:0'`.
+3. Run `docker compose up --build` from the repo root.
+
+**macOS**
+
+Install [XQuartz](https://www.xquartz.org/), log out and back in, then `xhost +localhost` and use `DISPLAY=host.docker.internal:0` (or your LAN IP) when launching compose.
+
+### GUI: VNC / noVNC (no host X11)
+
+Run the stack with an in-container TigerVNC display and noVNC on port **6080**:
+
+```bash
+KURUMI_GUI_MODE=vnc docker compose up --build
+```
+
+Open a browser on the host to `http://127.0.0.1:6080/vnc.html` and connect (passwordless VNC is intended for **local dev only**).
+
+### Ollama endpoint from inside the container
+
+`localhost` inside the container is **not** your host. Either:
+
+- Run Ollama on the host and, in **KURUMI → Settings**, set the Ollama base URL to `http://host.docker.internal:11434` (Docker Desktop / Compose with `host-gateway`), or to your host’s LAN IP on pure Linux Docker, **or**
+- Use **host networking** on Linux (`docker compose` override or `docker run --network host`) so `http://localhost:11434` matches the host, **or**
+- Start the bundled Ollama service (below) and point KURUMI at `http://ollama-service:11434`.
+
+### Optional Compose service: Ollama + NVIDIA GPU
+
+For machines such as the **Acer Nitro** line with an NVIDIA GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) on the host so Docker can schedule GPU workloads. Then enable the profile:
+
+```bash
+docker compose --profile ollama-gpu up --build
+```
+
+This starts `ollama/ollama` with the Compose `gpus` device request for **all** NVIDIA GPUs (same effect as `docker run --gpus all`). In KURUMI **Settings**, set the Ollama URL to `http://ollama-service:11434`. Models are stored in the `ollama-models` named volume.
+
+The `kurumi-app` service does **not** require a GPU; only the optional `ollama-service` uses GPU passthrough when that profile is active.
+
+### Graceful shutdown
+
+The main process handles `SIGTERM` / `SIGINT` by calling `app.quit()`, which runs the existing `before-quit` path: the RAG utility process receives a `shutdown` RPC (LanceDB / workers), then SQLite is closed as the app exits. Compose should stop with `docker compose stop` (or Ctrl+C) rather than `docker kill` whenever possible.
+
+### Environment reference
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `KURUMI_DOCKER` | `1` in image | Enables container-safe Chromium flags in `electron/main.ts`. |
+| `KURUMI_DEBUG_WORKER` | `1` in compose | Mirrors RAG worker stdout into the container logs. |
+| `KURUMI_GUI_MODE` | `x11` | `x11` uses host `DISPLAY`; `vnc` starts TigerVNC + noVNC. |
+| `DISPLAY` | `:0` | Host X11 display socket mapping. |
+| `XDG_CONFIG_HOME` | `/kurumi/persist` | Root for Electron `userData` (`…/kurumi`). |
+
+---
+
 ## ✦ Getting Started
 
 ### 1. Clone the repository

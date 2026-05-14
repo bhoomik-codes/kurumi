@@ -10,6 +10,23 @@ import { registerImageGenIpc } from './ipc/imagegen.ipc'
 import { workerManager } from './services/WorkerManager'
 import { appendRagWorkerLog } from './services/ragDiagnostics'
 
+/** Linux containers: Chromium shared memory + sandbox flags (see Docker README). */
+if (process.env.KURUMI_DOCKER === '1') {
+  app.commandLine.appendSwitch('disable-dev-shm-usage')
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
+let signalShutdownStarted = false
+function shutdownFromOsSignal(signal: string): void {
+  if (!signalShutdownStarted) {
+    signalShutdownStarted = true
+    console.log(`[main] ${signal} received, quitting`)
+  }
+  app.quit()
+}
+process.on('SIGTERM', () => shutdownFromOsSignal('SIGTERM'))
+process.on('SIGINT', () => shutdownFromOsSignal('SIGINT'))
+
 // Set app user model id for windows
 app.setAppUserModelId('dev.kurumi.ai')
 
