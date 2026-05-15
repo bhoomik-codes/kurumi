@@ -53,8 +53,8 @@ export function createWhisperRuntime(cacheDir: string) {
     loading = (async () => {
       console.log(`[voice-worker] Loading Whisper model: ${MODEL_IDS[size]}`)
       asr = (await pipeline('automatic-speech-recognition', MODEL_IDS[size], {
-        // Use float32 for broadest device compatibility
-        dtype: 'fp32',
+        // Use unquantized model for broadest device compatibility (v2 API)
+        quantized: false,
       })) as AutomaticSpeechRecognitionPipeline
       activeSize = size
       console.log(`[voice-worker] Whisper ${size} loaded`)
