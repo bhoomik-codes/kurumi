@@ -37,21 +37,25 @@
 <div align="center">
 
 ### 💬 Chat — Markdown Rendering with Conversation Sidebar
+
 ![Chat with Markdown rendering, conversation sidebar, and table output](kurumi/assets/screenshots/chat_markdown.png)
 
 <br/>
 
 ### 🧠 Local Models Manager
+
 ![Local models page showing installed models with size, parameters and quantization](kurumi/assets/screenshots/models_page.png)
 
 <br/>
 
 ### 🛍️ Model Store — Live Ollama Library Browser
+
 ![Model Store with live Ollama library results and install buttons](kurumi/assets/screenshots/model_store.png)
 
 <br/>
 
 ### 🩸 New Chat Empty State
+
 ![Chat empty state with "The void awaits your query" and conversation history sidebar](kurumi/assets/screenshots/chat_empty.png)
 
 </div>
@@ -69,6 +73,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 ## ✦ Current Features
 
 ### 💬 Chat Interface
+
 - **Real-time streaming** — tokens appear as they generate, with an animated "Summoning from the void..." loading state
 - **Conversation sidebar** — full chat history with search, pin/unpin, and delete
 - **Markdown rendering** — rich formatted output with syntax-highlighted code blocks (Cursed Blood dark theme), tables, lists, blockquotes, and more
@@ -77,19 +82,39 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 - **Auto-scroll** — chat window follows the stream in real time
 - **Multi-turn memory** — full conversation history sent to the model on every message
 
+### ⚡ Interactive Artifacts Engine
+
+- **Sandboxed Execution** — When models write code, KURUMI safely runs it.
+- **React Components** — Live preview and interact with generated React UIs.
+- **HTML/CSS Sandboxes** — Renders vanilla web code in an isolated iframe.
+- **Charts & Graphs** — Instantly draws `recharts` and `d3` components, deeply integrated with the app's dark theme.
+- **Mermaid Diagrams** — Fully zoomable interactive Flowcharts, Sequence Diagrams, and ER Models.
+- **Math / KaTeX** — Precise, beautiful rendering for complex mathematical equations.
+
 ### 🖼️ Image Generation Studio
+
 - **Automatic1111** — txt2img and img2img with sampler / steps / CFG / size / seed, optional checkpoint override, denoise control for img2img
 - **Save to disk** — one-click export of the current preview into the app data directory as PNG
 - **ComfyUI** — quick connection test to a local Comfy server (full workflow queue is not wired in this build)
 
-### 🧠 Model Management
+### 🎙️ Cursed Speech (Voice & TTS)
+
+- **Local Speech-to-Text (STT)** — Push-to-talk microphone powered by **Whisper ONNX** running in a dedicated background worker process.
+- **Cursed Waveform** — Real-time crimson waveform visualizer reflecting your voice intensity.
+- **Auto-Read TTS** — Responses read aloud using the OS-native `SpeechSynthesis` API.
+- **Personas** — Choose your TTS persona (Cursed, Whisper, Domain) directly from the settings.
+
+### 🧠 Model Management & Cloud Fallback
+
 - **Installed models page** — see all local Ollama models with size, parameters, quantization level, and family
+- **Cloud Models via NVIDIA NIM** — Seamlessly fallback to lightning-fast cloud endpoints (like Llama 3.1 405B) when local compute isn't enough, instantly switchable in chat.
 - **Image checkpoints (A1111)** — separate panel to list Stable Diffusion checkpoints from your WebUI API and mark which one Image Gen should use
 - **One-click select** — switch active model from the Models page
 - **Pull new models** — download directly from inside the app with a real-time streaming progress bar (%)
 - **Delete models** — with double-confirm safety guard
 
 ### 🛍️ Model Store
+
 - **Dual-source browser** — browse live from **Ollama Library** and **HuggingFace Hub** simultaneously
 - **Catalog scope** — filter search results toward **language / chat models** vs **image & diffusion** (plus *All*) on both tabs
 - **HuggingFace GGUF search** — sorted by Most Downloaded / Liked / Newest
@@ -99,6 +124,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 - **Installed detection** — already-installed models show a green "Installed" badge across both sources
 
 ### 🎨 Aesthetics ("Cursed Blood" Theme)
+
 - **Deep void background** `#050305` with floating red particle emitters
 - **Glassmorphism panels** — `backdrop-filter: blur(16px)` layered glass throughout
 - **Red accent system** — `#8B0000` → `#C41E3A` → `#FF2244` gradient hierarchy
@@ -106,12 +132,14 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 - **Animated loading states** — pulsing orb, streaming cursor, gradient progress bars
 - **Frameless window** — custom title bar with minimize/maximize/close controls
 
-### 🗄️ Data Persistence
+### 🗄️ Data Persistence & Multi-Process Architecture
+
 - **SQLite database** — all conversations and messages stored locally via `better-sqlite3`
 - **Full-text search** — FTS5 index on message content
 - **Conversation hydration** — last conversation automatically restored on app restart
-- **LanceDB vector store (Phase 6 RAG)** — document embeddings and chunk text persist under the app data directory at `vectorstore/` (next to the SQLite DB). Similarity search uses cosine distance with `topK` / `minScore` pushed into LanceDB (`distanceRange` + indexed-document filters). Chunk metadata (`document_id`, `filename`, `page_index` as chunk order) is stored as JSON in the `metadata` column for Sources in chat.
-- **Native modules** — `@lancedb/lancedb` ships platform binaries; `npm install` runs `electron-builder install-app-deps` so bindings match Electron. If you change Electron versions or hit ABI errors on Linux (e.g. Fedora), run `npm run postinstall` or `npx electron-rebuild -f -w @lancedb/lancedb`.
+- **LanceDB vector store (RAG)** — document embeddings and chunk text persist under the app data directory at `vectorstore/`. Similarity search uses cosine distance with `topK` / `minScore` pushed into LanceDB (`distanceRange` + indexed-document filters). Chunk metadata (`document_id`, `filename`, `page_index` as chunk order) is stored as JSON in the `metadata` column for Sources in chat.
+- **Utility Process Worker** — Heavy document parsing, vector generation (`nomic-embed-text`), and Whisper STT inference are fully offloaded to an isolated Electron Utility Process. This ensures the main UI thread never freezes.
+- **Native modules** — `@lancedb/lancedb` ships platform binaries; `npm install` runs `electron-builder install-app-deps` so bindings match Electron. ASAR unpack configurations ensure stable `.exe` / `.app` bundled builds. If you change Electron versions or hit ABI errors on Linux (e.g. Fedora), run `npm run postinstall` or `npx electron-rebuild -f -w @lancedb/lancedb`.
 
 ---
 
@@ -125,18 +153,19 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 ✅ Phase 5 — Conversation Sidebar with history, search, pin/delete
 ✅ Phase 5b — Markdown renderer + syntax highlighting + system prompt
 ✅ Phase 6 — Document Upload & RAG (PDF, DOCX, local vector search)
-✅ Phase 7 — Artifact rendering (React live preview, Mermaid, LaTeX) — *see nested `kurumi/` app tree*
-✅ Phase 8 — Image Generation Studio (Automatic1111 core + ComfyUI probe; Models & Store integration)
-⬜ Phase 9 — Voice input (Web Speech API + Whisper.cpp)
-⬜ Phase 10 — Prompt Library, Personas, Model Comparison
-⬜ Phase 11 — Packaged releases (Win / macOS / Linux)
+✅ Phase 7 — Artifact rendering (React live preview, Mermaid, LaTeX)
+✅ Phase 8 — Image Generation Studio (Automatic1111 core + ComfyUI probe)
+✅ Phase 9 — Cursed Speech (Voice & TTS via Whisper ONNX + Web Speech API)
+✅ Phase 10 — Cloud LLM Integration (NVIDIA NIM fallback)
+⬜ Phase 11 — Prompt Library, Personas, Model Comparison
+⬜ Phase 12 — Packaged releases (Win / macOS / Linux)
 ```
 
 **On the horizon:**
+
 - 🤖 Agent mode with local tool use (web search, file system)
 - 🔌 Plugin system for community extensions
 - 🗺️ Canvas mode — infinite whiteboard with AI chat nodes
-- 🔊 Local TTS for spoken responses (Piper / Kokoro)
 - 📺 Screen OCR — capture any region and send to the model
 - 🔄 Workflow builder — chain prompts like a local n8n for AI
 
@@ -152,23 +181,26 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 | Styling | [Tailwind CSS](https://tailwindcss.com) + Custom CSS | 3 |
 | State Management | [Zustand](https://zustand-demo.pmnd.rs) | 4 |
 | Routing | React Router DOM | 6 |
+| LLM Runtime | [Ollama](https://ollama.com) | Latest |
+| Voice STT | Whisper ONNX (`@xenova/transformers`) | v2 |
+| Voice TTS | Native Web Speech API (`SpeechSynthesis`) | OS Native |
+| Database | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) + FTS5 | 9 |
+| RAG / vectors | [LanceDB](https://lancedb.github.io/lancedb/) (`@lancedb/lancedb`, embedded) | 0.27 |
+| Artifact Runtime | `@babel/standalone` (in sandboxed iframe) | Latest |
 | Markdown | react-markdown + remark-gfm | Latest |
 | Syntax Highlighting | react-syntax-highlighter (Prism) | Latest |
 | Notifications | [Sonner](https://sonner.emilkowal.ski) | Latest |
 | Testing | [Vitest](https://vitest.dev) | 2 |
-| LLM Runtime | [Ollama](https://ollama.com) | Latest |
-| Database | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) + FTS5 | 9 |
-| RAG / vectors | [LanceDB](https://lancedb.github.io/lancedb/) (`@lancedb/lancedb`, embedded) | 0.27 |
 | Icons | [Lucide React](https://lucide.dev) | Latest |
 | IDs | uuid v4 | 9 |
 
-> **100% offline capable.** Zero telemetry. Zero cloud calls (except model browsing). Your models, your data, your machine.
+> **100% offline capable.** Zero telemetry. Zero cloud calls (except model browsing & optional NVIDIA NIM). Your models, your data, your machine.
 
 ---
 
 ## ✦ Architecture
 
-```
+```text
 local-guide/
 └── kurumi/                    ← Electron application root
     ├── electron/              ← Main process (Node.js)
@@ -178,8 +210,14 @@ local-guide/
     │   │   ├── ollama.ipc.ts      ← Chat streaming, model list, pull, delete
     │   │   ├── sqlite.ipc.ts      ← Conversation & message CRUD
     │   │   ├── store.ipc.ts       ← Ollama library + HuggingFace API proxy
-    │   │   └── imagegen.ipc.ts    ← A1111 txt2img / img2img / checkpoints / save
+    │   │   ├── imagegen.ipc.ts    ← A1111 txt2img / img2img / checkpoints / save
+    │   │   └── voice.ipc.ts       ← Whisper STT audio bridge
+    │   ├── worker/                ← UTILITY PROCESS (Heavy workloads)
+    │   │   ├── index.ts           ← Worker entry point
+    │   │   ├── ragWorkerTasks.ts  ← Document parsing & LanceDB indexing
+    │   │   └── voiceWorkerTasks.ts← Whisper ONNX transcription
     │   └── services/
+    │       ├── WorkerManager.ts       ← Spawns & communicates with Utility Process
     │       ├── OllamaService.ts       ← fetch-based streaming client
     │       ├── ImageGenService.ts     ← Stable Diffusion WebUI bridge
     │       └── DatabaseService.ts     ← SQLite init, schema, FTS5
@@ -188,39 +226,33 @@ local-guide/
     │   │   ├── Chat.tsx           ← Main chat interface
     │   │   ├── Models.tsx         ← Installed model manager
     │   │   ├── ModelStore.tsx     ← Live Ollama + HuggingFace browser
-    │   │   ├── Documents.tsx      ← (Phase 6)
-    │   │   ├── ImageGen.tsx       ← (Phase 8)
-    │   │   ├── Settings.tsx       ← App configuration
-    │   │   └── SystemInfo.tsx     ← Hardware & Ollama status
+    │   │   ├── Settings.tsx       ← App configuration & Voice settings
+    │   │   └── ImageGen.tsx       ← (Phase 8)
     │   ├── components/
     │   │   ├── chat/
     │   │   │   ├── MessageBubble.tsx      ← User/assistant message
-    │   │   │   ├── MarkdownRenderer.tsx   ← Full MD + syntax highlight
-    │   │   │   ├── ChatInput.tsx          ← Input with abort button
-    │   │   │   └── ConversationSidebar.tsx ← Chat history panel
-    │   │   ├── layout/
-    │   │   │   ├── TopBar.tsx             ← Frameless window controls
-    │   │   │   ├── Sidebar.tsx            ← App navigation
-    │   │   │   ├── StatusBar.tsx          ← Ollama status + model
-    │   │   │   └── ParticleBackground.tsx ← Canvas particle system
-    │   │   └── ui/
-    │   │       ├── GlassPanel.tsx
-    │   │       ├── CursedButton.tsx
-    │   │       └── CursedInput.tsx
+    │   │   │   ├── ChatInput.tsx          ← Input + Mic + Waveform
+    │   │   │   └── CursedWaveform.tsx     ← Voice canvas visualizer
+    │   │   ├── artifacts/             ← (Phase 7) Sandboxed rendering engine
+    │   │   └── layout/
+    │   │       ├── TopBar.tsx             ← Frameless window controls
+    │   │       ├── Sidebar.tsx            ← App navigation
+    │   │       └── StatusBar.tsx          ← System Info overlay
     │   ├── stores/
     │   │   ├── chatStore.ts       ← Conversations, messages, stream state
-    │   │   ├── modelStore.ts      ← Available models, active model
+    │   │   ├── voiceStore.ts      ← Voice recording state & TTS settings
     │   │   └── settingsStore.ts   ← App preferences
-    │   ├── constants/
-    │   │   └── systemPrompt.ts    ← Kurumi's Markdown formatting prompt
-    │   └── data/
-    │       └── modelRegistry.ts   ← Curated model catalogue (fallback)
-    └── assets/
-        └── screenshots/           ← README screenshots
+    │   └── hooks/
+    │       └── useVoice.ts        ← Web Audio API mic capture + SpeechSynthesis
 ```
 
-The primary development tree in this workspace is **`electron/` + `src/` at the repository root** (what `npm run dev` builds). A nested **`kurumi/`** directory mirrors many of the same pages for packaging or alternate workflows.
+KURUMI is built on a modern **Multi-Process Architecture** to ensure the interface never drops a frame, no matter how hard the AI is thinking:
 
+1. **Main Process (`electron/main.ts`)**: The orchestrator. Handles window management, strict Content Security Policies (CSP), and secure IPC bridges. It also manages the local SQLite database.
+2. **Renderer Process (`src/`)**: The React frontend. Handles the entire "Cursed Blood" UI, Canvas animations, state management (Zustand), and streaming Markdown rendering.
+3. **Utility Process (`electron/worker/`)**: The heavy lifter. AI tasks like LanceDB vector generation (`nomic-embed-text`) and Whisper ONNX local speech transcription are fully isolated here. Because they run in a completely separate OS-level process, the UI remains perfectly fluid at 60FPS even when crunching massive PDFs or audio streams.
+
+All native node modules (`better-sqlite3`, `@lancedb/lancedb`) are pre-compiled against the exact Node version shipped inside Electron to ensure stable standalone executables without missing `.node` binary errors
 ---
 
 ## ✦ Prerequisites
@@ -340,40 +372,61 @@ The main process handles `SIGTERM` / `SIGINT` by calling `app.quit()`, which run
 
 ---
 
-## ✦ Getting Started
+## 🌱 Complete Newbie Setup Guide
 
-### 1. Clone the repository
+If you've never run local AI before, don't worry. This guide will take you from zero to fully operational in minutes.
+
+### Step 1: Install the Prerequisites
+
+KURUMI runs entirely on your hardware, which means it requires a few standard tools to run:
+
+1. **[Node.js](https://nodejs.org)**: Download and install the **LTS (Long Term Support)** version. This gives your computer the engine needed to run JavaScript desktop applications.
+2. **[Git](https://git-scm.com/downloads)**: Download and install Git. This lets you securely download the KURUMI codebase to your machine.
+3. **[Ollama](https://ollama.com)**: This is the actual AI engine that runs the models locally. Download, install, and leave it running in the background.
+
+### Step 2: Download Your First AI Model
+
+Once Ollama is installed, open your Terminal (Mac/Linux) or Command Prompt/PowerShell (Windows) and type:
 
 ```bash
-git clone https://github.com/bhoomik-codes/kurumi.git
-cd kurumi/kurumi
+ollama pull llama3.2:3b
 ```
 
-### 2. Install dependencies
+*This downloads a highly optimized, lightning-fast model from Meta (about 2GB). Leave the terminal open while it downloads.*
+
+### Step 3: Clone and Install KURUMI
+
+In that same terminal, type these commands one by one, pressing Enter after each:
 
 ```bash
+# 1. Download the KURUMI code
+git clone https://github.com/bhoomik-codes/kurumi.git
+
+# 2. Enter the project folder
+cd kurumi/kurumi
+
+# 3. Install all the necessary app dependencies
 npm install
 ```
 
-### 3. Start Ollama
+### Step 4: Launch the Application
 
-```bash
-# Start Ollama in the background (if not already running)
-ollama serve
-
-# Pull a model to get started (choose one)
-ollama pull llama3.2:3b      # Recommended starter — fast, 2 GB
-ollama pull qwen2.5:7b       # Better reasoning, 4.4 GB
-ollama pull deepseek-r1:7b   # Best reasoning, 4.7 GB
-```
-
-### 4. Launch in development mode
+You're ready! Start the app with:
 
 ```bash
 npm run dev
 ```
 
-The Electron window will open automatically.
+The KURUMI window will open automatically. It will instantly connect to your local Ollama instance, detect the model you downloaded, and you can start chatting completely offline!
+
+### (Optional) Step 5: Connect Cloud Models (NVIDIA NIM)
+
+If your computer struggles to run local models, you can connect to massive cloud models for free:
+
+1. Click the **Settings** (gear) icon in the KURUMI sidebar.
+2. Scroll to the **Cloud Models (NVIDIA NIM)** section.
+3. Grab a free API key from [build.nvidia.com](https://build.nvidia.com) and paste it there.
+4. You can now select massive 405B frontier models directly from the chat interface!
 
 ---
 
@@ -395,7 +448,16 @@ Built artifacts are output to `dist/`.
 
 ## ✦ Changelog
 
-### `v0.6.1` — Phase 6 finalized: RAG hardening *(Latest)*
+### `v1.0.0` — The Domain Expansion *(Latest)*
+
+- ✅ **Phase 9 — Cursed Speech (Voice & TTS):** Added fully local Whisper ONNX STT in the utility process and Web Speech API TTS for auto-reading responses.
+- ✅ **Interactive Artifacts Engine:** Sandboxed iframe execution for React, Recharts, Mermaid, and KaTeX right inside the chat window.
+- ✅ **NVIDIA NIM Cloud Fallback:** Seamless dual-provider switching to flip between local Ollama models and lightning-fast cloud endpoints.
+- ✅ **Multi-Process Architecture:** Extract heavy LanceDB embedding generation and Whisper transcription out of the main thread and into an Electron Utility Process.
+- ✅ **Stable Bundles:** Fixed `electron-builder` native ASAR unpack paths to ensure standalone `.exe` installers work perfectly on Windows without runtime binary errors.
+
+### `v0.6.1` — Phase 6 finalized: RAG hardening
+
 - ✅ **RAG IPC integrity:** added canonical `rag:index` / `rag:search` channels (while keeping `docs:*` compatibility)
 - ✅ **Service split:** parsing, embedding, and vector retrieval extracted into dedicated services (`ParseService`, `EmbeddingService`, `VectorStore`)
 - ✅ **Quality controls:** tuned Top-K + minimum score filtering and source diversity to reduce noisy chunk injection
@@ -405,6 +467,7 @@ Built artifacts are output to `dist/`.
 - ✅ **Runtime stability:** indexing yields frequently to keep Electron responsive on large files and unloads embedding model after indexing
 
 ### `v0.6.0` — Image Generation Studio & model discovery
+
 - ✅ **Phase 8 (core):** Automatic1111 txt2img + img2img over local REST (`imagegen:*` IPC), PNG save to app `userData/generated-images`, checkpoint override via `override_settings`
 - ✅ **ComfyUI:** reachability probe (`/system_stats` / `/queue`); queue workflows not bundled in this release
 - ✅ **Models page:** dedicated **Image generation checkpoints** panel — load SD checkpoints from WebUI, pick active checkpoint for the studio (syncs with Image Gen)
@@ -413,35 +476,41 @@ Built artifacts are output to `dist/`.
 - ✅ **Stability & feedback:** centralized IPC error logging with stack traces in dev, Sonner toasts for probe/generation/save failures, tunable A1111 timeouts via `KURUMI_A1111_TIMEOUT_MS` / `KURUMI_A1111_PROBE_MS`, and initial Vitest + CI coverage for imagegen payload helpers.
 
 ### `v0.5.0` — Markdown & System Prompt
+
 - ✅ Full Markdown renderer with Cursed Blood syntax highlighting
 - ✅ Copy button on all code blocks
 - ✅ System prompt injected on every request (Kurumi persona + formatting rules)
 - ✅ User messages rendered as plain text, assistant as rich Markdown
 
 ### `v0.4.0` — Conversation Sidebar
+
 - ✅ Persistent conversation history panel
 - ✅ Per-conversation search, pin/unpin, delete
 - ✅ DB hydration on app restart (last conversation auto-loaded)
 - ✅ "New Chat" button with instant state reset
 
 ### `v0.3.1` — Live Model Store
+
 - ✅ HuggingFace Hub GGUF browser (sorted by downloads/likes/newest)
 - ✅ Ollama Library live scrape
 - ✅ Quantization picker modal per HF model
 - ✅ Direct `hf.co/` pull with streaming progress bar
 
 ### `v0.3.0` — Model Management Page
+
 - ✅ Installed model cards with size, params, quantization details
 - ✅ Model select, pull (with real-time % progress bar), and delete
 - ✅ Curated offline model registry as fallback
 
 ### `v0.2.0` — Core Chat + IPC
+
 - ✅ Ollama streaming chat via `ipcMain.on` + `event.sender.send`
 - ✅ Loading indicator ("Summoning from the void...")
 - ✅ SQLite schema with FTS5 for conversations and messages
 - ✅ Streaming abort button
 
 ### `v0.1.0` — Foundation
+
 - ✅ Electron + Vite + React + TypeScript scaffold
 - ✅ Tailwind CSS + Cursed Blood design system
 - ✅ Glassmorphism layout — TopBar, Sidebar, StatusBar, ParticleBackground
@@ -457,8 +526,8 @@ Built artifacts are output to `dist/`.
 | Pay monthly for API access | Run everything on your hardware |
 | Your prompts train someone else's model | Nothing leaves your machine |
 | One model, take it or leave it | Switch between 50+ models in one click |
-| Basic chat UI | Rich Markdown, syntax highlighting, live artifacts (nested `kurumi/` build) |
-| Upload files to third-party servers | Parse locally, embed locally, query locally (Phase 6) |
+| Basic chat UI | Rich Markdown, syntax highlighting, live artifacts |
+| Upload files to third-party servers | Parse locally, embed locally, query locally |
 | Generic grey interface | A UI you actually want to look at |
 | Closed source, black box | MIT licensed, fully auditable |
 
