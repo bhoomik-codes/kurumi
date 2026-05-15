@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useChatStore, Message } from '../stores/chatStore'
 import { useModelStore } from '../stores/modelStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useVoiceStore } from '../stores/voiceStore'
 import ChatInput from '../components/chat/ChatInput'
 import MessageBubble from '../components/chat/MessageBubble'
 import ConversationSidebar from '../components/chat/ConversationSidebar'
@@ -57,8 +58,11 @@ export default function Chat() {
   const [nvidiaProbing, setNvidiaProbing] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [showUnavailable, setShowUnavailable] = useState(false)
+  const [lastAssistantMsg, setLastAssistantMsg] = useState<string | undefined>(undefined)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
+
+  const { loadVoicePrefs } = useVoiceStore()
 
   // Close picker on outside click
   useEffect(() => {
@@ -75,6 +79,7 @@ export default function Chat() {
   useEffect(() => {
     const boot = async () => {
       await loadFromDB()
+      await loadVoicePrefs()
 
       // Load Ollama models (embedding models already filtered in backend)
       const models = await window.electron?.invoke('ollama:models')
@@ -238,6 +243,7 @@ export default function Chat() {
         addMessage(msg)
         clearStreaming()
         await window.electron?.invoke('db:messages:insert', msg)
+        setLastAssistantMsg(msg.content)
         if (unsubChunk) unsubChunk()
         if (unsubDone) unsubDone()
         if (unsubErr) unsubErr()
@@ -285,6 +291,7 @@ export default function Chat() {
         addMessage(msg)
         clearStreaming()
         await window.electron?.invoke('db:messages:insert', msg)
+        setLastAssistantMsg(msg.content)
         if (unsubChunk) unsubChunk()
         if (unsubDone) unsubDone()
       })
@@ -490,11 +497,12 @@ export default function Chat() {
 
         {/* Input */}
         <div className="p-4 max-w-3xl mx-auto w-full flex-shrink-0">
-          <ChatInput
+        <ChatInput
             onSendMessage={handleSendMessage}
             onAbort={handleAbort}
             isStreaming={isStreaming}
             disabled={activeProvider === 'ollama' ? !activeModel : (!nvidiaModel || !nvidiaApiKey)}
+            newAssistantMessage={lastAssistantMsg}
           />
         </div>
       </div>

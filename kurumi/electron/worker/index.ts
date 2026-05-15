@@ -1,10 +1,11 @@
 /**
- * RAG utility process entry — heavy parsing, embeddings, and LanceDB live here
- * so the browser/main UI thread stays responsive.
+ * RAG + Voice utility process entry — heavy parsing, embeddings, LanceDB, and
+ * Whisper STT live here so the browser/main UI thread stays responsive.
  */
 import { createEmbeddingRuntime, defaultHfCachePath } from '../services/embeddingRuntime'
 import { VectorStoreCore } from '../services/vectorStoreCore'
 import { runDelete, runIndexDocument, runSearch, type WorkerRuntime } from './ragWorkerTasks'
+import { createWhisperRuntime, type WhisperModelSize, type WhisperRuntime } from './voiceWorkerTasks'
 
 const userDataRoot = process.env.KURUMI_USER_DATA
 if (!userDataRoot) {
@@ -12,6 +13,7 @@ if (!userDataRoot) {
 }
 
 let rt: WorkerRuntime | null = null
+let whisper: WhisperRuntime | null = null
 
 function ensureRuntime(): WorkerRuntime {
   if (!userDataRoot) {
@@ -25,6 +27,14 @@ function ensureRuntime(): WorkerRuntime {
   return rt
 }
 
+function ensureWhisper(): WhisperRuntime {
+  if (!userDataRoot) throw new Error('RAG worker missing KURUMI_USER_DATA')
+  if (!whisper) {
+    whisper = createWhisperRuntime(defaultHfCachePath(userDataRoot))
+  }
+  return whisper
+}
+
 async function handleMessage(raw: unknown): Promise<void> {
   const msg = raw as Record<string, unknown>
   const type = msg.type as string
@@ -35,8 +45,10 @@ async function handleMessage(raw: unknown): Promise<void> {
     try {
       rt?.embed.unload()
       rt?.store.close()
+      whisper?.unload()
     } finally {
       rt = null
+      whisper = null
     }
     if (rpcId) {
       process.parentPort.postMessage({ type: 'rpc-result', rpcId, ok: true, payload: {} })
@@ -75,6 +87,21 @@ async function handleMessage(raw: unknown): Promise<void> {
     return
   }
 
+  // ── Voice: transcription (Whisper — independent of RAG runtime) ───────────
+  if (type === 'transcribe-audio') {
+    try {
+      const pcmData = msg.pcmData as number[]
+      const modelSize = (msg.modelSize as WhisperModelSize) ?? 'base'
+      const language = (msg.language as string) ?? 'english'
+      const result = await ensureWhisper().transcribe(pcmData, modelSize, language)
+      replyOk(result)
+    } catch (e) {
+      replyErr(e)
+    }
+    return
+  }
+
+  // ── RAG tasks ─────────────────────────────────────────────────────────────
   try {
     const runtime = ensureRuntime()
 

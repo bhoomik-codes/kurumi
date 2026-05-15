@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useModelStore } from '../stores/modelStore'
+import { useVoiceStore, type SttModelSize, type TtsVoice } from '../stores/voiceStore'
 import {
   Settings2, Cpu, Brain, Database, Sliders,
-  RotateCcw, Check, Server, RefreshCw, Zap, KeyRound, ShieldCheck, AlertTriangle
+  RotateCcw, Check, Server, RefreshCw, Zap, KeyRound, ShieldCheck, AlertTriangle, Mic, Volume2
 } from 'lucide-react'
 
 // ─── Reusable slider row ────────────────────────────────────────────────────
@@ -67,6 +68,12 @@ export default function Settings() {
   } = useSettingsStore()
 
   const { availableModels, setAvailableModels } = useModelStore()
+
+  const {
+    sttModel, ttsVoice, autoRead, sttLanguage, ttsSpeed, loadVoicePrefs,
+    setSttModel, setTtsVoice, setAutoRead, setSttLanguage, setTtsSpeed,
+  } = useVoiceStore()
+
   const [saved, setSaved] = useState(false)
   const [ollamaUrlInput, setOllamaUrlInput] = useState(ollamaUrl)
   const [nvKeyInput, setNvKeyInput] = useState(nvidiaApiKey)
@@ -75,6 +82,7 @@ export default function Settings() {
 
   useEffect(() => {
     loadFromDB()
+    void loadVoicePrefs()
     fetchModels()
   }, [])
 
@@ -317,6 +325,112 @@ export default function Settings() {
             <p className="text-xs text-text-dim">
               URL of the local Ollama API server. Restart the app after changing this.
             </p>
+          </Section>
+
+          {/* ── Voice & Speech ────────────────────────────────────────────── */}
+          <Section title="Voice & Speech (Cursed Speech)" icon={Mic}>
+            <p className="text-xs text-text-dim">
+              Configure local speech-to-text transcription (Whisper ONNX) and text-to-speech playback.
+              Models download to your <code className="text-red-bright/70">hf-cache</code> folder on first use — no cloud required.
+            </p>
+
+            {/* STT Model */}
+            <div className="space-y-1.5">
+              <label className="text-sm text-text-primary font-medium flex items-center gap-2">
+                <Mic size={13} className="text-red-core" /> Transcription Model
+              </label>
+              <select
+                value={sttModel}
+                onChange={(e) => setSttModel(e.target.value as SttModelSize)}
+                className="w-full bg-black/30 border border-border-glass rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-red-core/60 transition-colors"
+              >
+                <option value="tiny">Whisper Tiny — fastest, ~75 MB, good for quiet speech</option>
+                <option value="base">Whisper Base — balanced, ~145 MB (recommended)</option>
+                <option value="small">Whisper Small — most accurate, ~465 MB</option>
+              </select>
+              <p className="text-xs text-text-dim">
+                Models are downloaded once to <code>hf-cache/</code> and run entirely offline.
+              </p>
+            </div>
+
+            {/* STT Language */}
+            <div className="space-y-1.5">
+              <label className="text-sm text-text-primary font-medium">Spoken Language</label>
+              <select
+                value={sttLanguage}
+                onChange={(e) => setSttLanguage(e.target.value)}
+                className="w-full bg-black/30 border border-border-glass rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-red-core/60 transition-colors"
+              >
+                {[
+                  ['english', 'English'],
+                  ['hindi', 'Hindi'],
+                  ['french', 'French'],
+                  ['german', 'German'],
+                  ['spanish', 'Spanish'],
+                  ['japanese', 'Japanese'],
+                  ['chinese', 'Chinese (Mandarin)'],
+                  ['arabic', 'Arabic'],
+                  ['portuguese', 'Portuguese'],
+                  ['russian', 'Russian'],
+                ].map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* TTS Voice */}
+            <div className="space-y-1.5">
+              <label className="text-sm text-text-primary font-medium flex items-center gap-2">
+                <Volume2 size={13} className="text-red-core" /> TTS Voice Persona
+              </label>
+              <select
+                value={ttsVoice}
+                onChange={(e) => setTtsVoice(e.target.value as TtsVoice)}
+                className="w-full bg-black/30 border border-border-glass rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-red-core/60 transition-colors"
+              >
+                <option value="cursed">Cursed — deep, dramatic, low pitch</option>
+                <option value="whisper">Whisper — soft, ethereal cadence</option>
+                <option value="domain">Domain — crisp, fast, authoritative</option>
+              </select>
+              <p className="text-xs text-text-dim">
+                Uses your OS speech engine (eSpeak-ng on Linux, WinRT on Windows). Voice availability varies by system.
+              </p>
+            </div>
+
+            {/* TTS Speed */}
+            <SliderRow
+              label="Speech Speed"
+              hint="Controls TTS playback rate. 1.0 = normal speed."
+              value={ttsSpeed}
+              min={0.5} max={2.0} step={0.05}
+              displayFn={(v) => `${v.toFixed(2)}×`}
+              onChange={(v) => { setTtsSpeed(v); flash() }}
+            />
+
+            {/* Auto-Read toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-text-primary font-medium">Auto-Read Responses</p>
+                <p className="text-xs text-text-dim mt-0.5">
+                  Automatically speak every assistant reply aloud after generation completes.
+                </p>
+              </div>
+              <button
+                onClick={() => { setAutoRead(!autoRead); flash() }}
+                className={[
+                  'relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0',
+                  autoRead ? 'bg-red-core' : 'bg-white/10',
+                ].join(' ')}
+                title={autoRead ? 'Disable auto-read' : 'Enable auto-read'}
+              >
+                <span
+                  className={[
+                    'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200',
+                    autoRead ? 'translate-x-5' : 'translate-x-0',
+                  ].join(' ')}
+                />
+              </button>
+            </div>
           </Section>
 
           {/* ── GPU Info ─────────────────────────────────────────────────── */}

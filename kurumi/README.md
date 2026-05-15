@@ -164,6 +164,7 @@ Phase 4 — Artifact Rendering Engine              [ IN PROGRESS / nested app ]
 Phase 5 — Image Generation Studio               [ CORE COMPLETE — A1111 + UI + Models integration ]
 Phase 6 — Polish, Animations, Power Features     [ COMING SOON ]
 Phase 7 — Packaged Releases (Win/Mac/Linux)      [ COMING SOON ]
+Phase 9 — Cursed Speech (Voice & TTS)            [ ✅ DONE ]
 ```
 
 **On the horizon:**

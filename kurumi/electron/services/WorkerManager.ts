@@ -266,6 +266,19 @@ export class WorkerManager {
     return { success: true }
   }
 
+  async transcribeAudio(
+    pcmData: number[],
+    modelSize: 'tiny' | 'base' | 'small' = 'base',
+    language = 'english'
+  ): Promise<{ text: string; language?: string }> {
+    return this.rpc<{ text: string; language?: string }>({
+      type: 'transcribe-audio',
+      pcmData,
+      modelSize,
+      language,
+    })
+  }
+
   async shutdown(): Promise<void> {
     if (!this.child) return
     const child = this.child
