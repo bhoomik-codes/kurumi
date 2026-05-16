@@ -11,15 +11,6 @@ function readStoredCheckpoint(): string | null {
   }
 }
 
-export interface ModelParameters {
-  temperature: number
-  top_p: number
-  top_k: number
-  repeat_penalty: number
-  num_ctx: number
-  seed?: number
-}
-
 export interface LocalModel {
   name: string
   model: string
@@ -36,55 +27,27 @@ export interface LocalModel {
 
 interface ModelState {
   availableModels: LocalModel[]
-  runningModels: any[]
   activeModel: string | null
-  /** Automatic1111 checkpoint title (from /sdapi/v1/sd-models) */
   activeImageGenCheckpoint: string | null
   isModelWarming: boolean
-  globalParameters: ModelParameters
+  warmingProgress: string  // human-readable status message
 
   setAvailableModels: (models: LocalModel[]) => void
-  setRunningModels: (models: any[]) => void
-  setActiveModel: (modelName: string | null) => void
+  setActiveModel: (modelName: string | null, skipWarmup?: boolean) => void
   setActiveImageGenCheckpoint: (checkpointTitle: string | null) => void
-  warmupModel: (modelName: string) => Promise<boolean>
-  updateParameters: (params: Partial<ModelParameters>) => void
+  setIsWarming: (v: boolean, msg?: string) => void
 }
 
 export const useModelStore = create<ModelState>((set) => ({
   availableModels: [],
-  runningModels: [],
   activeModel: null,
   activeImageGenCheckpoint: readStoredCheckpoint(),
   isModelWarming: false,
-  globalParameters: {
-    temperature: 0.7,
-    top_p: 0.9,
-    top_k: 40,
-    repeat_penalty: 1.1,
-    num_ctx: 4096
-  },
+  warmingProgress: '',
 
   setAvailableModels: (models) => set({ availableModels: models }),
-  setRunningModels: (models) => set({ runningModels: models }),
-  setActiveModel: (modelName) => {
-    set({ activeModel: modelName })
-    if (modelName) {
-      // Fire-and-forget warmup to reduce first-token latency
-      void (async () => {
-        set({ isModelWarming: true })
-        try {
-          await window.electron?.invoke('ollama:warmup', modelName)
-        } catch {
-          // ignore warmup errors; chat send will surface real errors
-        } finally {
-          set({ isModelWarming: false })
-        }
-      })()
-    } else {
-      set({ isModelWarming: false })
-    }
-  },
+
+  setIsWarming: (v, msg = '') => set({ isModelWarming: v, warmingProgress: msg }),
 
   setActiveImageGenCheckpoint: (checkpointTitle) => {
     set({ activeImageGenCheckpoint: checkpointTitle })
@@ -99,18 +62,27 @@ export const useModelStore = create<ModelState>((set) => ({
     }
   },
 
-  warmupModel: async (modelName) => {
-    set({ isModelWarming: true })
-    try {
-      await window.electron?.invoke('ollama:warmup', modelName)
-      return true
-    } catch {
-      return false
-    } finally {
-      set({ isModelWarming: false })
+  setActiveModel: (modelName, skipWarmup = false) => {
+    set({ activeModel: modelName })
+    // Persist default model choice
+    if (modelName) {
+      void window.electron?.invoke('settings:set', 'defaultModel', modelName)
+    }
+
+    if (modelName && !skipWarmup) {
+      void (async () => {
+        set({ isModelWarming: true, warmingProgress: 'Loading model into VRAM…' })
+        try {
+          await window.electron?.invoke('ollama:warmup', modelName)
+          set({ warmingProgress: 'Model ready' })
+          // Clear "ready" message after 2s
+          setTimeout(() => set({ warmingProgress: '' }), 2000)
+        } catch {
+          set({ warmingProgress: '' })
+        } finally {
+          set({ isModelWarming: false })
+        }
+      })()
     }
   },
-  updateParameters: (params) => set((state) => ({ 
-    globalParameters: { ...state.globalParameters, ...params } 
-  }))
 }))

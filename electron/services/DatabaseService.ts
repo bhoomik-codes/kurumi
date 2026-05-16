@@ -8,6 +8,9 @@ class DatabaseService {
   constructor() {
     const dbPath = join(app.getPath('userData'), 'kurumi.db')
     this.db = new Database(dbPath)
+    this.db.pragma('journal_mode = WAL')
+    this.db.pragma('synchronous = NORMAL')
+    this.db.pragma('foreign_keys = ON')
     this.initSchema()
   }
 
@@ -55,6 +58,22 @@ class DatabaseService {
         indexed_at  INTEGER,
         status      TEXT DEFAULT 'pending',
         metadata    TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS document_chunks (
+        id          TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        content     TEXT NOT NULL,
+        embedding   TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
+      CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+
+      -- Key-value settings store
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS prompts (
@@ -119,6 +138,10 @@ class DatabaseService {
 
   public all(sql: string, params: any[] = []) {
     return this.db.prepare(sql).all(params)
+  }
+
+  public iterate(sql: string, params: any[] = []) {
+    return this.db.prepare(sql).iterate(params)
   }
 }
 

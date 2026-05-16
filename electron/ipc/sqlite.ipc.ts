@@ -34,9 +34,17 @@ export function registerSqliteIpc() {
 
   ipcMain.handle('db:messages:insert', (e, args) => {
     const { id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata } = args
+    const attachmentsValue =
+      attachments == null || typeof attachments === 'string'
+        ? attachments
+        : JSON.stringify(attachments)
+    const metadataValue =
+      metadata == null || typeof metadata === 'string'
+        ? metadata
+        : JSON.stringify(metadata)
     dbService.run(
       'INSERT INTO messages (id, conversation_id, role, content, model, created_at, token_count, generation_ms, attachments, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachments, metadata]
+      [id, conversationId, role, content, model, createdAt, tokenCount, generationMs, attachmentsValue, metadataValue]
     )
     return id
   })
@@ -52,5 +60,24 @@ export function registerSqliteIpc() {
        ORDER BY rank LIMIT 50`,
       [query]
     )
+  })
+
+  // ─── Persistent Settings (KV) ─────────────────────────────────────────────
+  ipcMain.handle('settings:get', (_e, key: string) => {
+    const row = dbService.get('SELECT value FROM settings WHERE key = ?', [key]) as { value: string } | undefined
+    return row ? JSON.parse(row.value) : null
+  })
+
+  ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
+    dbService.run(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      [key, JSON.stringify(value)]
+    )
+    return true
+  })
+
+  ipcMain.handle('settings:getAll', () => {
+    const rows = dbService.all('SELECT key, value FROM settings') as { key: string; value: string }[]
+    return Object.fromEntries(rows.map(r => [r.key, JSON.parse(r.value)]))
   })
 }

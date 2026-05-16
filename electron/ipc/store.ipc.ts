@@ -54,7 +54,6 @@ export function registerStoreIpc() {
   // ─── HuggingFace Search ───────────────────────────────────────────────────
   ipcMain.handle('store:hf:search', async (_event, { query = '', sort = 'downloads', limit = 24, page = 0, catalog = 'all' }: {
     query?: string; sort?: string; limit?: number; page?: number
-    /** Narrow HuggingFace GGUF results: LLM vs diffusion-style checkpoints */
     catalog?: 'all' | 'language' | 'image'
   }) => {
     try {

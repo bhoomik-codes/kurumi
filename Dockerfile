@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# KURUMI app root: kurumi/ (Electron 30 + LanceDB + better-sqlite3)
+# KURUMI app root (Electron 30 + LanceDB + better-sqlite3)
 # -----------------------------------------------------------------------------
 # Stage 1 — compile native modules against the same glibc / toolchain as runtime
 # -----------------------------------------------------------------------------
@@ -16,10 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY kurumi/package.json kurumi/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY kurumi/ ./
+COPY . ./
 RUN npx electron-rebuild -f -w @lancedb/lancedb better-sqlite3
 
 # -----------------------------------------------------------------------------

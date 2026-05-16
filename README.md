@@ -38,25 +38,25 @@
 
 ### 💬 Chat — Markdown Rendering with Conversation Sidebar
 
-![Chat with Markdown rendering, conversation sidebar, and table output](kurumi/assets/screenshots/chat_markdown.png)
+![Chat with Markdown rendering, conversation sidebar, and table output](assets/screenshots/chat_markdown.png)
 
 <br/>
 
 ### 🧠 Local Models Manager
 
-![Local models page showing installed models with size, parameters and quantization](kurumi/assets/screenshots/models_page.png)
+![Local models page showing installed models with size, parameters and quantization](assets/screenshots/models_page.png)
 
 <br/>
 
 ### 🛍️ Model Store — Live Ollama Library Browser
 
-![Model Store with live Ollama library results and install buttons](kurumi/assets/screenshots/model_store.png)
+![Model Store with live Ollama library results and install buttons](assets/screenshots/model_store.png)
 
 <br/>
 
 ### 🩸 New Chat Empty State
 
-![Chat empty state with "The void awaits your query" and conversation history sidebar](kurumi/assets/screenshots/chat_empty.png)
+![Chat empty state with "The void awaits your query" and conversation history sidebar](assets/screenshots/chat_empty.png)
 
 </div>
 
@@ -190,7 +190,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 | Markdown | react-markdown + remark-gfm | Latest |
 | Syntax Highlighting | react-syntax-highlighter (Prism) | Latest |
 | Notifications | [Sonner](https://sonner.emilkowal.ski) | Latest |
-| Testing | [Vitest](https://vitest.dev) | 2 |
+| Testing | [Vitest](https://vitest.dev) | 2.x |
 | Icons | [Lucide React](https://lucide.dev) | Latest |
 | IDs | uuid v4 | 9 |
 
@@ -201,49 +201,107 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 ## ✦ Architecture
 
 ```text
-local-guide/
-└── kurumi/                    ← Electron application root
-    ├── electron/              ← Main process (Node.js)
-    │   ├── main.ts            ← App lifecycle, window, CSP
-    │   ├── preload.ts         ← Secure contextBridge IPC bridge
-    │   ├── ipc/
-    │   │   ├── ollama.ipc.ts      ← Chat streaming, model list, pull, delete
-    │   │   ├── sqlite.ipc.ts      ← Conversation & message CRUD
-    │   │   ├── store.ipc.ts       ← Ollama library + HuggingFace API proxy
-    │   │   ├── imagegen.ipc.ts    ← A1111 txt2img / img2img / checkpoints / save
-    │   │   └── voice.ipc.ts       ← Whisper STT audio bridge
-    │   ├── worker/                ← UTILITY PROCESS (Heavy workloads)
-    │   │   ├── index.ts           ← Worker entry point
-    │   │   ├── ragWorkerTasks.ts  ← Document parsing & LanceDB indexing
-    │   │   └── voiceWorkerTasks.ts← Whisper ONNX transcription
-    │   └── services/
-    │       ├── WorkerManager.ts       ← Spawns & communicates with Utility Process
-    │       ├── OllamaService.ts       ← fetch-based streaming client
-    │       ├── ImageGenService.ts     ← Stable Diffusion WebUI bridge
-    │       └── DatabaseService.ts     ← SQLite init, schema, FTS5
-    ├── src/                   ← Renderer process (React)
-    │   ├── pages/
-    │   │   ├── Chat.tsx           ← Main chat interface
-    │   │   ├── Models.tsx         ← Installed model manager
-    │   │   ├── ModelStore.tsx     ← Live Ollama + HuggingFace browser
-    │   │   ├── Settings.tsx       ← App configuration & Voice settings
-    │   │   └── ImageGen.tsx       ← (Phase 8)
-    │   ├── components/
-    │   │   ├── chat/
-    │   │   │   ├── MessageBubble.tsx      ← User/assistant message
-    │   │   │   ├── ChatInput.tsx          ← Input + Mic + Waveform
-    │   │   │   └── CursedWaveform.tsx     ← Voice canvas visualizer
-    │   │   ├── artifacts/             ← (Phase 7) Sandboxed rendering engine
-    │   │   └── layout/
-    │   │       ├── TopBar.tsx             ← Frameless window controls
-    │   │       ├── Sidebar.tsx            ← App navigation
-    │   │       └── StatusBar.tsx          ← System Info overlay
-    │   ├── stores/
-    │   │   ├── chatStore.ts       ← Conversations, messages, stream state
-    │   │   ├── voiceStore.ts      ← Voice recording state & TTS settings
-    │   │   └── settingsStore.ts   ← App preferences
-    │   └── hooks/
-    │       └── useVoice.ts        ← Web Audio API mic capture + SpeechSynthesis
+kurumi/                            ← Repository root (Electron app)
+├── electron/                      ← Main process (Node.js)
+│   ├── main.ts                    ← App lifecycle, window, CSP
+│   ├── preload.ts                 ← Secure contextBridge IPC bridge
+│   ├── ipc/                       ← IPC channel handlers
+│   │   ├── ollama.ipc.ts          ← Chat streaming, model list, pull, delete
+│   │   ├── sqlite.ipc.ts          ← Conversation & message CRUD
+│   │   ├── store.ipc.ts           ← Ollama library + HuggingFace API proxy
+│   │   ├── rag.ipc.ts             ← RAG document index/search/delete
+│   │   ├── imagegen.ipc.ts        ← A1111 txt2img / img2img / checkpoints / save
+│   │   ├── nvidia.ipc.ts          ← NVIDIA NIM cloud model proxy
+│   │   ├── system.ipc.ts          ← System info (CPU, RAM, GPU)
+│   │   └── voice.ipc.ts           ← Whisper STT audio bridge
+│   ├── worker/                    ← UTILITY PROCESS (offloaded heavy workloads)
+│   │   ├── index.ts               ← Worker entry point & message router
+│   │   ├── ragWorkerTasks.ts      ← Document parsing & LanceDB indexing
+│   │   └── voiceWorkerTasks.ts    ← Whisper ONNX STT transcription
+│   ├── services/
+│   │   ├── WorkerManager.ts       ← Spawns & communicates with Utility Process (RPC)
+│   │   ├── DatabaseService.ts     ← SQLite init, schema migrations, FTS5
+│   │   ├── OllamaService.ts       ← fetch-based streaming client
+│   │   ├── ImageGenService.ts     ← Stable Diffusion WebUI bridge
+│   │   ├── NvidiaService.ts       ← NVIDIA NIM REST client
+│   │   ├── DocumentService.ts     ← File upload pipeline entry
+│   │   ├── ParseService.ts        ← PDF / DOCX / XLSX / TXT text extraction
+│   │   ├── embeddingRuntime.ts    ← @xenova/transformers embedding pipeline
+│   │   ├── vectorStoreCore.ts     ← LanceDB connection, insert, cosine search
+│   │   ├── ragChunking.ts         ← 512-token chunking with overlap
+│   │   ├── ragDiagnostics.ts      ← Startup health-check & log appender
+│   │   ├── imageGenPayload.ts     ← Pure helpers for A1111 payloads
+│   │   └── imageGenPayload.test.ts← Vitest unit tests for payload helpers
+│   └── utils/
+│       └── ipcLogger.ts           ← Structured IPC error logging (dev)
+├── src/                           ← Renderer process (React + TypeScript)
+│   ├── main.tsx                   ← React DOM entry point
+│   ├── App.tsx                    ← Router & layout shell
+│   ├── pages/
+│   │   ├── Chat.tsx               ← Main chat interface
+│   │   ├── Models.tsx             ← Installed model manager
+│   │   ├── ModelStore.tsx         ← Live Ollama + HuggingFace browser
+│   │   ├── Documents.tsx          ← RAG Knowledge Base manager
+│   │   ├── ImageGen.tsx           ← Image Generation Studio
+│   │   ├── Settings.tsx           ← App configuration & Voice settings
+│   │   ├── SystemInfo.tsx         ← Hardware stats overlay
+│   │   └── OllamaSetup.tsx        ← First-run Ollama onboarding
+│   ├── components/
+│   │   ├── chat/
+│   │   │   ├── MessageBubble.tsx      ← User/assistant message renderer
+│   │   │   ├── MarkdownRenderer.tsx   ← Rich markdown + KaTeX + syntax highlight
+│   │   │   ├── ChatInput.tsx          ← Input field + mic button + waveform
+│   │   │   ├── ConversationSidebar.tsx← Chat history with search/pin/delete
+│   │   │   └── CursedWaveform.tsx     ← Real-time voice canvas visualizer
+│   │   ├── artifacts/                 ← Sandboxed artifact rendering engine
+│   │   │   ├── ArtifactContainer.tsx  ← Detects artifact type, routes to renderer
+│   │   │   ├── ReactArtifact.tsx      ← Live React component sandbox (iframe)
+│   │   │   ├── HtmlArtifact.tsx       ← Vanilla HTML/CSS/JS sandbox (iframe)
+│   │   │   ├── MermaidArtifact.tsx    ← Zoomable Mermaid diagram renderer
+│   │   │   ├── ChartArtifact.tsx      ← Recharts / D3 data visualization
+│   │   │   └── CodeArtifact.tsx       ← Syntax-highlighted raw code block
+│   │   ├── rag/
+│   │   │   └── RAGPanel.tsx           ← Document upload, index status, sources
+│   │   ├── layout/
+│   │   │   ├── TopBar.tsx             ← Frameless window controls (min/max/close)
+│   │   │   ├── Sidebar.tsx            ← App navigation rail
+│   │   │   ├── StatusBar.tsx          ← System info status overlay
+│   │   │   └── ParticleBackground.tsx ← Crimson floating particle animation
+│   │   └── ui/
+│   │       ├── CursedButton.tsx       ← Themed button component
+│   │       ├── CursedInput.tsx        ← Themed input component
+│   │       └── GlassPanel.tsx         ← Glassmorphism panel wrapper
+│   ├── stores/
+│   │   ├── chatStore.ts           ← Conversations, messages, stream state (Zustand)
+│   │   ├── modelStore.ts          ← Installed & selected model state
+│   │   ├── voiceStore.ts          ← Voice recording state & TTS settings
+│   │   └── settingsStore.ts       ← App preferences (persisted via electron-store)
+│   ├── hooks/
+│   │   └── useVoice.ts            ← Web Audio API mic capture + SpeechSynthesis TTS
+│   ├── styles/
+│   │   ├── globals.css            ← CSS variables, base reset
+│   │   ├── glass.css              ← Glassmorphism panel styles
+│   │   ├── animations.css         ← Keyframe animations
+│   │   └── fonts.css              ← Typography imports
+│   ├── constants/
+│   │   └── systemPrompt.ts        ← Kurumi persona + formatting instructions
+│   ├── data/
+│   │   └── modelRegistry.ts       ← Curated offline model catalog
+│   └── types/
+│       ├── electron.d.ts          ← window.electronAPI type declarations
+│       └── vite-env.d.ts          ← Vite environment type stubs
+├── assets/                        ← App icons & screenshots
+├── public/                        ← Static web assets
+├── index.html                     ← Vite HTML entry point
+├── vite.config.ts                 ← Vite + Electron plugin config
+├── electron-builder.config.js     ← Packaging, ASAR unpack rules
+├── tsconfig.json                  ← TypeScript (renderer)
+├── tsconfig.node.json             ← TypeScript (main process / Vite)
+├── tailwind.config.ts             ← Tailwind design tokens
+├── postcss.config.cjs             ← PostCSS pipeline
+├── package.json                   ← Scripts, dependencies
+├── Dockerfile                     ← Container build (Debian Bookworm + Node 20)
+└── docker-compose.yml             ← Compose stack (X11 or VNC + optional GPU Ollama)
 ```
 
 KURUMI is built on a modern **Multi-Process Architecture** to ensure the interface never drops a frame, no matter how hard the AI is thinking:
@@ -252,7 +310,8 @@ KURUMI is built on a modern **Multi-Process Architecture** to ensure the interfa
 2. **Renderer Process (`src/`)**: The React frontend. Handles the entire "Cursed Blood" UI, Canvas animations, state management (Zustand), and streaming Markdown rendering.
 3. **Utility Process (`electron/worker/`)**: The heavy lifter. AI tasks like LanceDB vector generation (`nomic-embed-text`) and Whisper ONNX local speech transcription are fully isolated here. Because they run in a completely separate OS-level process, the UI remains perfectly fluid at 60FPS even when crunching massive PDFs or audio streams.
 
-All native node modules (`better-sqlite3`, `@lancedb/lancedb`) are pre-compiled against the exact Node version shipped inside Electron to ensure stable standalone executables without missing `.node` binary errors
+All native node modules (`better-sqlite3`, `@lancedb/lancedb`) are pre-compiled against the exact Node version shipped inside Electron to ensure stable standalone executables without missing `.node` binary errors.
+
 ---
 
 ## ✦ Prerequisites
@@ -273,7 +332,7 @@ Before running KURUMI, ensure you have:
 
 ## 🐳 Docker Setup
 
-Run the full **nested** KURUMI tree under [`kurumi/`](kurumi/) (Electron 30, `@lancedb/lancedb`, `better-sqlite3`, RAG utility process) inside a Debian Bookworm + Node 20 image. Native modules are rebuilt with `electron-rebuild` in the container so binaries match the Linux glibc inside the image—no more host/ABI mismatch.
+Run KURUMI (Electron 30, `@lancedb/lancedb`, `better-sqlite3`, RAG utility process) inside a Debian Bookworm + Node 20 image. Native modules are rebuilt with `electron-rebuild` in the container so binaries match the Linux glibc inside the image—no more host/ABI mismatch.
 
 ### Prerequisites (Docker path only)
 
@@ -379,7 +438,6 @@ If you've never run local AI before, don't worry. This guide will take you from 
 ### Step 1: Install the Prerequisites
 
 KURUMI runs entirely on your hardware, which means it requires a few standard tools to run:
-
 1. **[Node.js](https://nodejs.org)**: Download and install the **LTS (Long Term Support)** version. This gives your computer the engine needed to run JavaScript desktop applications.
 2. **[Git](https://git-scm.com/downloads)**: Download and install Git. This lets you securely download the KURUMI codebase to your machine.
 3. **[Ollama](https://ollama.com)**: This is the actual AI engine that runs the models locally. Download, install, and leave it running in the background.
@@ -391,7 +449,6 @@ Once Ollama is installed, open your Terminal (Mac/Linux) or Command Prompt/Power
 ```bash
 ollama pull llama3.2:3b
 ```
-
 *This downloads a highly optimized, lightning-fast model from Meta (about 2GB). Leave the terminal open while it downloads.*
 
 ### Step 3: Clone and Install KURUMI
@@ -403,7 +460,7 @@ In that same terminal, type these commands one by one, pressing Enter after each
 git clone https://github.com/bhoomik-codes/kurumi.git
 
 # 2. Enter the project folder
-cd kurumi/kurumi
+cd kurumi
 
 # 3. Install all the necessary app dependencies
 npm install
@@ -420,9 +477,7 @@ npm run dev
 The KURUMI window will open automatically. It will instantly connect to your local Ollama instance, detect the model you downloaded, and you can start chatting completely offline!
 
 ### (Optional) Step 5: Connect Cloud Models (NVIDIA NIM)
-
 If your computer struggles to run local models, you can connect to massive cloud models for free:
-
 1. Click the **Settings** (gear) icon in the KURUMI sidebar.
 2. Scroll to the **Cloud Models (NVIDIA NIM)** section.
 3. Grab a free API key from [build.nvidia.com](https://build.nvidia.com) and paste it there.
@@ -535,9 +590,10 @@ Built artifacts are output to `dist/`.
 
 ## ✦ Developer notes
 
-- **Environment flags**: `KURUMI_A1111_TIMEOUT_MS` (txt2img/img2img timeout ceiling in ms), `KURUMI_A1111_PROBE_MS` (probe timeout ceiling in ms).
-- **Tests**: `npm run test` runs Vitest over Electron-side helpers (currently imagegen payloads); CI also runs `tsc` for renderer + Electron main.
+- **Environment flags**: `KURUMI_A1111_TIMEOUT_MS` (txt2img/img2img timeout ceiling in ms), `KURUMI_A1111_PROBE_MS` (probe timeout ceiling in ms), `KURUMI_DEBUG_WORKER=1` (mirror RAG worker stdout to main logs).
+- **Tests**: `npm test` runs Vitest over Electron-side pure helpers (`electron/services/imageGenPayload.test.ts`). Use `npm run test:watch` for interactive mode. CI also runs `tsc` for type-checking the renderer and Electron main.
 - **IPC logging**: all `imagegen:*` handlers use a shared `ipcLogger` for structured error events with messages and stack traces in development.
+- **Native rebuild**: after changing Electron versions or on a fresh Linux box, run `npm run rebuild:natives` to rebuild `@lancedb/lancedb` and `better-sqlite3` against the correct ABI.
 
 ## ✦ Contributing
 

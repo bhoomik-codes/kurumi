@@ -14,7 +14,15 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['better-sqlite3', 'electron-store', 'ollama'],
+              external: [
+              '@lancedb/lancedb',
+              'better-sqlite3',
+              'electron-store',
+              'ollama',
+              'onnxruntime-node',
+              'sharp',
+              'pdf-parse',
+            ],
             },
           },
         },
@@ -28,6 +36,28 @@ export default defineConfig({
         },
         onstart(options) {
           options.reload()
+        },
+      },
+      {
+        entry: 'electron/worker/index.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              output: {
+                entryFileNames: 'worker.js',
+              },
+              external: [
+                '@lancedb/lancedb',
+                'better-sqlite3',
+                'electron-store',
+                'ollama',
+                'onnxruntime-node',
+                'sharp',
+                'pdf-parse',
+              ],
+            },
+          },
         },
       },
     ]),

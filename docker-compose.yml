@@ -1,4 +1,4 @@
-# KURUMI (kurumi/) — Electron + native LanceDB / SQLite inside Linux containers.
+# KURUMI — Electron + native LanceDB / SQLite inside Linux containers.
 # Build from repository root:  docker compose up --build
 
 services:

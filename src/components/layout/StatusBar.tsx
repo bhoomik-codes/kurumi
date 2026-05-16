@@ -67,9 +67,22 @@ export default function StatusBar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1" title={systemStats.gpuName}>
-          <Cpu size={12} className="text-text-secondary" />
-          <span>VRAM: {systemStats.vramUsed} / {systemStats.vramTotal} GB</span>
+        <div
+          className="flex items-center gap-1 max-w-[220px] truncate"
+          title={
+            systemStats.vramSource === 'ollama'
+              ? `${systemStats.gpuName} — nvidia-smi is unavailable inside this app process; VRAM is summed from Ollama loaded models (size_vram).`
+              : systemStats.gpuName
+          }
+        >
+          <Cpu size={12} className="text-text-secondary flex-shrink-0" />
+          <span className="truncate">
+            {systemStats.vramSource === 'ollama' ? (
+              <>VRAM: ~{systemStats.vramUsed} GB (Ollama)</>
+            ) : (
+              <>VRAM: {systemStats.vramUsed} / {systemStats.vramTotal} GB</>
+            )}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <Activity size={12} className="text-red-glow" />

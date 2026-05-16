@@ -5,8 +5,8 @@
 **/dist-electron
 **/.vite
 **/*.log
-kurumi/coverage
-kurumi/test-results
+coverage
+test-results
 *.exe
 *.AppImage
 *.dmg

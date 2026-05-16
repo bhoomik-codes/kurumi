@@ -1,6 +1,7 @@
 export class OllamaService {
   public baseUrl = 'http://localhost:11434'
   private abortController: AbortController | null = null
+  private warmupAbort: AbortController | null = null
 
   async checkStatus(): Promise<boolean> {
     try {
@@ -11,17 +12,44 @@ export class OllamaService {
     }
   }
 
+  // Known embedding-only model families to exclude from the chat model selector
+  private static EMBEDDING_FAMILIES = new Set([
+    'nomic-bert', 'bert', 'clip', 'reranker',
+  ])
+  private static EMBEDDING_NAME_PATTERNS = [
+    'embed', 'embedding', 'e5-', 'bge-', 'gte-', 'minilm'
+  ]
+
   async getModels(): Promise<any[]> {
     try {
       const response = await fetch(`${this.baseUrl}/api/tags`)
       const data = await response.json()
-      return data.models || []
+      const all: any[] = data.models || []
+      // Strip embedding models so the chat model picker only shows generative LLMs
+      return all.filter(m => {
+        const family = (m.details?.family ?? '').toLowerCase()
+        const name   = (m.name ?? '').toLowerCase()
+        if (OllamaService.EMBEDDING_FAMILIES.has(family)) return false
+        if (OllamaService.EMBEDDING_NAME_PATTERNS.some(p => name.includes(p))) return false
+        return true
+      })
     } catch {
       return []
     }
   }
 
+  abortWarmup() {
+    if (this.warmupAbort) {
+      this.warmupAbort.abort()
+      this.warmupAbort = null
+    }
+  }
+
   async warmup(model: string): Promise<boolean> {
+    this.abortWarmup()
+    const ac = new AbortController()
+    this.warmupAbort = ac
+    const signal = ac.signal
     try {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
@@ -32,14 +60,19 @@ export class OllamaService {
           options: { num_predict: 1 },
           stream: false
         }),
+        signal,
       })
       return response.ok
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return false
       return false
+    } finally {
+      if (this.warmupAbort === ac) this.warmupAbort = null
     }
   }
 
   async *streamChat(messages: any[], model: string, options: any = {}) {
+    this.abortWarmup()
     this.abortController = new AbortController()
     const response = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',

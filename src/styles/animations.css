@@ -40,3 +40,22 @@
   from { background-size: 0% 100%; }
   to   { background-size: 100% 100%; }
 }
+
+/* Phase 9: waveform container fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+/* Phase 9: mic active ping — Tailwind handles animate-ping natively */
+/* Extra crimson glow pulse on the mic icon when recording */
+@keyframes micGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(255,34,68,0.4); }
+  50%       { box-shadow: 0 0 18px rgba(255,34,68,0.8), 0 0 36px rgba(139,0,0,0.4); }
+}
+.mic-glow-active {
+  animation: micGlow 1.2s ease-in-out infinite;
+}
