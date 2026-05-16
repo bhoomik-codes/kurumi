@@ -2,6 +2,9 @@
 .agent/
 .cursor/
 .antigravity/
+CLAUDE.md
+CONTEXT.md
+KURUMI_PLAN.md
 
 # Logs
 logs
@@ -123,6 +126,7 @@ tmp/
 temp/
 # To allow a specific script, add a negation below, e.g.:
 # !scripts/setup.sh
+!docker-entrypoint.sh
 
 # ── Editor & IDE artifacts ────────────────────────────────────────────────────
 .vscode/settings.json
