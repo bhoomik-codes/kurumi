@@ -727,6 +727,12 @@ Please follow the existing code style (TypeScript strict, functional React compo
 
 ---
 
+## ✦ Credits
+
+Special thanks to [lyogavin](https://github.com/lyogavin) for creating [AirLLM](https://github.com/lyogavin/airllm), which powers the frontier-model streaming engine in KURUMI.
+
+---
+
 ## ✦ License
 
 MIT — take it, fork it, make it yours.
