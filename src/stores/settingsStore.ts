@@ -34,7 +34,7 @@ interface SettingsState {
   // Connection
   ollamaUrl: string
   nvidiaApiKey: string
-  activeProvider: 'ollama' | 'nvidia'
+  activeProvider: 'ollama' | 'nvidia' | 'airllm'
 
   // Theme
   themeAccent: string
@@ -102,7 +102,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         ragEmbeddingModel: all['ragEmbeddingModel']  ?? state.ragEmbeddingModel,
         ollamaUrl:         all['ollamaUrl']          ?? state.ollamaUrl,
         nvidiaApiKey:      all['nvidiaApiKey']       ?? state.nvidiaApiKey,
-        activeProvider:    all['activeProvider']     ?? state.activeProvider,
+        activeProvider:    (all['activeProvider'] ?? state.activeProvider) as 'ollama' | 'nvidia' | 'airllm',
         themeAccent:       all['themeAccent']        ?? state.themeAccent,
       }))
     } catch {

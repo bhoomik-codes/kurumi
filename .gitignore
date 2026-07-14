@@ -127,6 +127,9 @@ temp/
 # To allow a specific script, add a negation below, e.g.:
 # !scripts/setup.sh
 !docker-entrypoint.sh
+!kurumi.sh
+!airllm_server.py
+!requirements-airllm.txt
 
 # ── Editor & IDE artifacts ────────────────────────────────────────────────────
 .vscode/settings.json
@@ -144,3 +147,13 @@ temp/
 *.patch
 test-results/
 playwright-report/
+
+# ── AirLLM ─────────────────────────────────────────────────────────────────
+# Model shard files are large and should never be committed
+airllm_shards/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/

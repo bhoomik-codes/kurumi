@@ -108,6 +108,7 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 
 - **Installed models page** — see all local Ollama models with size, parameters, quantization level, and family
 - **Cloud Models via NVIDIA NIM** — Seamlessly fallback to lightning-fast cloud endpoints (like Llama 3.1 405B) when local compute isn't enough, instantly switchable in chat.
+- **🔬 AirLLM — Frontier Models on Consumer GPUs** — Run 30B, 40B, 70B, even 405B parameter models on a single GPU with as little as 4 GB VRAM using layer-by-layer weight streaming. No quantization, no cloud. Switch to AirLLM provider directly from the chat header.
 - **Image checkpoints (A1111)** — separate panel to list Stable Diffusion checkpoints from your WebUI API and mark which one Image Gen should use
 - **One-click select** — switch active model from the Models page
 - **Pull new models** — download directly from inside the app with a real-time streaming progress bar (%)
@@ -327,6 +328,124 @@ Before running KURUMI, ensure you have:
 | Optional: ComfyUI | Local | Connection test only in this build (port 8188 typical) |
 | Git | Any | For cloning |
 | RAM | 4 GB minimum | 8 GB+ recommended for 7B+ models |
+
+---
+
+## 🔬 AirLLM — Run 30B, 40B, 70B Models on Consumer GPUs
+
+KURUMI integrates [AirLLM](https://github.com/lyogavin/airllm), a library that lets you run frontier-scale models (30B, 40B, 70B, even 405B parameters) on a **single GPU with as little as 4 GB VRAM** — without quantization, distillation, or cloud calls.
+
+It works by splitting the model into per-layer shard files and streaming them through GPU memory one layer at a time. Your data stays completely local.
+
+### Hardware Requirements for AirLLM
+
+| Model Size | Min VRAM | Disk Space (fp16) |
+|---|---|---|
+| 7B | 4 GB | ~14 GB |
+| 30–32B | 4–5 GB | ~60 GB |
+| 40B | 5–6 GB | ~80 GB |
+| 70B | 6–8 GB | ~140 GB |
+
+> **Disk space is the real bottleneck.** Use `AIRLLM_SHARD_DIR` to point at a large drive.
+
+### Quick Start with `kurumi.sh`
+
+Everything is managed by the `kurumi.sh` launcher script that ships in this repo.
+
+**1. Install dependencies (first time only)**
+
+```bash
+cd kurumi-electron
+./kurumi.sh setup
+```
+
+**2. Set the global alias** (add to your shell forever)
+
+```bash
+echo "alias kurumi='$(pwd)/kurumi.sh'" >> ~/.bashrc
+source ~/.bashrc
+```
+
+**3. Start KURUMI (normal Ollama mode)**
+
+```bash
+kurumi
+```
+
+**4. Start KURUMI with AirLLM (big model mode)**
+
+```bash
+# Default: Qwen 7B (quick test)
+kurumi airllm
+
+# Run a 32B model
+AIRLLM_MODEL='Qwen/Qwen2.5-32B-Instruct' kurumi airllm
+
+# Run a 70B LLaMA on a large external drive
+AIRLLM_MODEL='meta-llama/Meta-Llama-3-70B-Instruct' \
+AIRLLM_SHARD_DIR='/mnt/bigdrive/shards' \
+HF_TOKEN='hf_xxx' \
+kurumi airllm
+
+# Run a 70B model with 4-bit compression (saves ~75% disk)
+AIRLLM_MODEL='meta-llama/Meta-Llama-3-70B-Instruct' \
+AIRLLM_COMPRESSION='4bit' \
+kurumi airllm
+```
+
+**5. Start the AirLLM server only (headless, for debugging)**
+
+```bash
+AIRLLM_MODEL='Qwen/Qwen2.5-32B-Instruct' kurumi server
+```
+
+### All `kurumi` Commands
+
+| Command | Description |
+|---|---|
+| `kurumi` | Start KURUMI normally (Ollama / NVIDIA mode) |
+| `kurumi airllm` | Start AirLLM server + KURUMI together |
+| `kurumi server` | Start AirLLM server only (headless) |
+| `kurumi setup` | Install all Node.js + Python dependencies |
+| `kurumi help` | Show full help with examples |
+
+### AirLLM Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AIRLLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | HuggingFace model ID or local path |
+| `AIRLLM_SHARD_DIR` | `~/airllm_shards` | Where to store per-layer shard files |
+| `AIRLLM_PORT` | `8765` | API server port |
+| `AIRLLM_DEVICE` | `cuda:0` | PyTorch device |
+| `AIRLLM_MAX_SEQ_LEN` | `512` | Max input tokens (lower = less VRAM) |
+| `AIRLLM_COMPRESSION` | *(none)* | `4bit` or `8bit` — saves disk space |
+| `HF_TOKEN` | *(none)* | Required for gated models (LLaMA, Gemma) |
+
+### How It Works in KURUMI
+
+1. `kurumi airllm` starts `airllm_server.py` in the background on port `8765`.
+2. The server exposes an **OpenAI-compatible `/v1/chat/completions` API**.
+3. KURUMI's **AirLLM provider** appears as a third toggle in the chat header (purple `🧠 AirLLM` button).
+4. When AirLLM is selected, all messages are routed through `electron/ipc/airllm.ipc.ts` → `electron/services/AirLLMService.ts` → the local Python server.
+5. The server runs AirLLM inference and streams tokens back word-by-word in SSE format.
+
+The AirLLM button is **greyed out** when the server is offline, so switching to it by accident is impossible.
+
+### For Contributors Cloning This Repo
+
+```bash
+git clone https://github.com/bhoomik-codes/kurumi.git
+cd kurumi
+./kurumi.sh setup   # installs npm deps + Python airllm/fastapi/uvicorn
+
+# Normal use (no big models needed)
+kurumi
+
+# Or with AirLLM
+AIRLLM_MODEL='Qwen/Qwen2.5-7B-Instruct' kurumi airllm
+```
+
+No Python environment management is needed — `kurumi setup` installs into whatever `python3` is on your `PATH`. If you prefer a venv, activate it before running `kurumi setup`.
 
 ---
 

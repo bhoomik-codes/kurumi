@@ -6,6 +6,7 @@ import { registerStoreIpc } from './ipc/store.ipc'
 import { registerRagIpc } from './ipc/rag.ipc'
 import { registerSystemIpc } from './ipc/system.ipc'
 import { registerNvidiaIpc } from './ipc/nvidia.ipc'
+import { registerAirLLMIpc } from './ipc/airllm.ipc'
 import { registerImageGenIpc } from './ipc/imagegen.ipc'
 import { registerVoiceIpc } from './ipc/voice.ipc'
 import { workerManager } from './services/WorkerManager'
@@ -61,7 +62,7 @@ async function createWindow() {
     // blob: is required for Web Audio API TTS playback (AudioContext + createObjectURL)
     const csp = isDev
       ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: http: https: ws:; script-src 'self' 'unsafe-eval' 'unsafe-inline' http:; connect-src 'self' http://localhost:* ws://localhost:* http://127.0.0.1:* https://integrate.api.nvidia.com; media-src 'self' blob: data:;"
-      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://integrate.api.nvidia.com; media-src 'self' blob: data:;"
+      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://integrate.api.nvidia.com http://127.0.0.1:8765; media-src 'self' blob: data:;"
 
     callback({
       responseHeaders: {
@@ -98,6 +99,7 @@ app.whenReady().then(() => {
   registerRagIpc()
   registerSystemIpc()
   registerNvidiaIpc()
+  registerAirLLMIpc()
   registerImageGenIpc()
   registerVoiceIpc()
 

@@ -8,12 +8,13 @@ import ChatInput from '../components/chat/ChatInput'
 import MessageBubble from '../components/chat/MessageBubble'
 import ConversationSidebar from '../components/chat/ConversationSidebar'
 import { KURUMI_SYSTEM_PROMPT } from '../constants/systemPrompt'
-import { Loader2, Cpu, ChevronDown, Zap, HardDrive } from 'lucide-react'
+import { Loader2, Cpu, ChevronDown, Zap, HardDrive, Brain } from 'lucide-react'
 
 // ── Provider badge colours ──────────────────────────────────────────────────
 const PROVIDER_STYLES = {
-  ollama: { label: 'Local · Ollama', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  nvidia: { label: 'Cloud · NVIDIA', color: 'bg-green-400/10 text-green-300 border-green-400/20' },
+  ollama:  { label: 'Local · Ollama',  color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  nvidia:  { label: 'Cloud · NVIDIA',  color: 'bg-green-400/10 text-green-300 border-green-400/20'       },
+  airllm:  { label: 'Local · AirLLM',  color: 'bg-purple-500/10 text-purple-400 border-purple-500/20'    },
 }
 
 export default function Chat() {
@@ -58,6 +59,10 @@ export default function Chat() {
   const [nvidiaProbing, setNvidiaProbing] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [showUnavailable, setShowUnavailable] = useState(false)
+  // AirLLM state
+  const [airllmOnline, setAirllmOnline] = useState(false)
+  const [airllmModel, setAirllmModel] = useState<string>('')
+  const [airllmChecking, setAirllmChecking] = useState(false)
   const [lastAssistantMsg, setLastAssistantMsg] = useState<string | undefined>(undefined)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -104,10 +109,23 @@ export default function Chat() {
         }
       }
 
+      // Probe AirLLM server (non-blocking, silent if offline)
+      setAirllmChecking(true)
+      try {
+        const airStatus = await window.electron?.invoke('airllm:status') as { ok: boolean; model?: string } | null
+        if (airStatus?.ok) {
+          setAirllmOnline(true)
+          const airModels = await window.electron?.invoke('airllm:models') as { id: string; label: string }[] | null
+          const firstModel = airModels?.[0]?.id ?? airStatus.model ?? ''
+          setAirllmModel(firstModel)
+        }
+      } catch { /* server offline — ignore */ }
+      setAirllmChecking(false)
+
       // Load saved provider
       const savedProvider = await window.electron?.invoke('settings:get', 'activeProvider') as string | null
-      if (savedProvider === 'nvidia' || savedProvider === 'ollama') {
-        setSetting('activeProvider', savedProvider)
+      if (savedProvider === 'nvidia' || savedProvider === 'ollama' || savedProvider === 'airllm') {
+        setSetting('activeProvider', savedProvider as any)
       }
 
       // Hydrate conversations
@@ -153,14 +171,19 @@ export default function Chat() {
   // ── Send message ──────────────────────────────────────────────────────────
   const handleSendMessage = async (content: string) => {
     const isNvidia = activeProvider === 'nvidia'
-    const currentModel = isNvidia ? nvidiaModel : activeModel
+    const isAirLLM = activeProvider === 'airllm'
+    const currentModel = isNvidia ? nvidiaModel : isAirLLM ? airllmModel : activeModel
 
     if (!currentModel) {
-      alert(isNvidia ? 'Please select an NVIDIA model.' : 'Please select a model first.')
+      alert(isNvidia ? 'Please select an NVIDIA model.' : isAirLLM ? 'AirLLM server is offline. Run airllm_server.py first.' : 'Please select a model first.')
       return
     }
     if (isNvidia && !nvidiaApiKey) {
       alert('Add your NVIDIA API key in Settings first.')
+      return
+    }
+    if (isAirLLM && !airllmOnline) {
+      alert('AirLLM server is offline.\n\nRun: python airllm_server.py\n\nThen refresh KURUMI.')
       return
     }
 
@@ -269,6 +292,53 @@ export default function Chat() {
         replyId,
         options: { temperature: modelParams.temperature, top_p: modelParams.top_p }
       })
+    } else if (isAirLLM) {
+      // ── AirLLM path (local big-model streaming server) ─────────────────
+      const unsubChunk = window.electron?.on(`airllm:chat:chunk:${replyId}`, (_e, chunk: any) => {
+        if (chunk.content) updateStreamingContent(chunk.content, false)
+      })
+      const unsubDone = window.electron?.on(`airllm:chat:done:${replyId}`, async () => {
+        const { streamingContent: sc } = useChatStore.getState()
+        const finalContent = sc.trim() || '_(No response received — check terminal running airllm_server.py)_'
+        const sourceBlock = ragSources.length
+          ? `\n\n### Sources\n${ragSources
+              .map((s) => `- \`${s.filename}\` (chunk ${s.chunk_index})`)
+              .join('\n')}`
+          : ''
+        const msg: Message = {
+          id: replyId, conversationId: conversationId!, role: 'assistant',
+          content: `${finalContent}${sourceBlock}`, model: airllmModel, createdAt: Date.now(),
+          metadata: ragSources.length ? { sources: ragSources } : undefined,
+        }
+        addMessage(msg)
+        clearStreaming()
+        await window.electron?.invoke('db:messages:insert', msg)
+        setLastAssistantMsg(msg.content)
+        if (unsubChunk) unsubChunk()
+        if (unsubDoneA) unsubDoneA()
+        if (unsubErrA) unsubErrA()
+      })
+      const unsubDoneA = unsubDone
+      const unsubErrA = window.electron?.on(`airllm:chat:error:${replyId}`, (_e, errMsg: string) => {
+        console.error('[AirLLM] Stream error received in renderer:', errMsg)
+        const errContent = `⚠️ **AirLLM Error**\n\n\`\`\`\n${errMsg}\n\`\`\`\n\n_Make sure airllm_server.py is running in a terminal._`
+        const errBubble: Message = {
+          id: replyId, conversationId: conversationId!, role: 'assistant',
+          content: errContent, model: airllmModel, createdAt: Date.now()
+        }
+        addMessage(errBubble)
+        clearStreaming()
+        void window.electron?.invoke('db:messages:insert', errBubble)
+        if (unsubChunk) unsubChunk()
+        if (unsubDoneA) unsubDoneA()
+        if (unsubErrA) unsubErrA()
+      })
+      window.electron?.send('airllm:chat:stream', {
+        messages: history,
+        model: airllmModel,
+        replyId,
+        options: { temperature: modelParams.temperature, top_p: modelParams.top_p, max_tokens: 512 }
+      })
     } else {
       // ── Ollama path ────────────────────────────────────────────────────
       const unsubChunk = window.electron?.on(`ollama:chat:chunk:${replyId}`, (_e, chunk: any) => {
@@ -313,14 +383,16 @@ export default function Chat() {
   const handleAbort = () => {
     if (activeProvider === 'nvidia') {
       window.electron?.send('nvidia:chat:abort')
+    } else if (activeProvider === 'airllm') {
+      window.electron?.send('airllm:chat:abort')
     } else {
       window.electron?.send('ollama:chat:abort')
     }
     clearStreaming()
   }
 
-  const switchProvider = (p: 'ollama' | 'nvidia') => {
-    setSetting('activeProvider', p)
+  const switchProvider = (p: 'ollama' | 'nvidia' | 'airllm') => {
+    setSetting('activeProvider', p as any)
     window.electron?.invoke('settings:set', 'activeProvider', p)
   }
 
@@ -338,7 +410,9 @@ export default function Chat() {
           <h1 className="font-display text-sm text-text-primary tracking-wide truncate">
             {activeProvider === 'nvidia'
               ? (nvidiaModel || 'Select NVIDIA Model')
-              : (activeModel || 'Select a Model')}
+              : activeProvider === 'airllm'
+                ? (airllmModel ? `AirLLM · ${airllmModel.split('/').pop()}` : 'AirLLM (offline)')
+                : (activeModel || 'Select a Model')}
           </h1>
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -378,6 +452,28 @@ export default function Chat() {
               >
                 <Zap size={11} />
                 NVIDIA
+              </button>
+              <div className="w-px h-4 bg-border-glass" />
+              <button
+                onClick={() => airllmOnline && switchProvider('airllm')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 transition-all ${
+                  activeProvider === 'airllm'
+                    ? 'bg-purple-500/20 text-purple-400'
+                    : airllmOnline
+                      ? 'text-text-dim hover:text-text-secondary hover:bg-white/5'
+                      : 'text-text-dim/30 cursor-not-allowed'
+                }`}
+                disabled={!airllmOnline}
+                title={airllmOnline
+                  ? `AirLLM server online — ${airllmModel}`
+                  : airllmChecking
+                    ? 'Checking AirLLM server…'
+                    : 'AirLLM server offline — run airllm_server.py'}
+              >
+                {airllmChecking
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : <Brain size={11} />}
+                AirLLM
               </button>
             </div>
 
@@ -501,7 +597,11 @@ export default function Chat() {
             onSendMessage={handleSendMessage}
             onAbort={handleAbort}
             isStreaming={isStreaming}
-            disabled={activeProvider === 'ollama' ? !activeModel : (!nvidiaModel || !nvidiaApiKey)}
+            disabled={
+              activeProvider === 'ollama'  ? !activeModel :
+              activeProvider === 'airllm' ? !airllmOnline :
+              (!nvidiaModel || !nvidiaApiKey)
+            }
             newAssistantMessage={lastAssistantMsg}
           />
         </div>
