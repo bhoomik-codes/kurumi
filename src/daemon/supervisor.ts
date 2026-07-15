@@ -1,6 +1,36 @@
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
+import fs from 'fs'
+import os from 'os'
 import { getChildLogger } from './logger'
+
+const configDir = path.join(os.homedir(), '.config', 'kurumi')
+const extractedAirLLMPath = path.join(configDir, 'airllm_server.py')
+
+try {
+  fs.mkdirSync(configDir, { recursive: true })
+  
+  // Find the real path of airllm_server.py (next to executable when packaged, or in root when dev)
+  const isPackaged = typeof process.pkg !== 'undefined' || process.argv[0].endsWith('kurumi-cli') || process.argv[0].endsWith('kurumi-cli.exe')
+  const baseDir = isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '..', '..')
+  const sourcePath = path.join(baseDir, 'airllm_server.py')
+  
+  if (fs.existsSync(sourcePath)) {
+    const scriptContent = fs.readFileSync(sourcePath, 'utf-8')
+    fs.writeFileSync(extractedAirLLMPath, scriptContent)
+  } else {
+    // If running in dev from kurumi-electron/src/daemon
+    const devPath = path.join(__dirname, '..', '..', 'airllm_server.py')
+    if (fs.existsSync(devPath)) {
+       const scriptContent = fs.readFileSync(devPath, 'utf-8')
+       fs.writeFileSync(extractedAirLLMPath, scriptContent)
+    } else {
+       console.error(`[Supervisor] Could not find airllm_server.py at ${sourcePath} or ${devPath}`)
+    }
+  }
+} catch (err) {
+  console.error('Failed to extract airllm_server.py:', err)
+}
 
 const airllmLogger = getChildLogger('airllm')
 const ollamaLogger = getChildLogger('ollama')
@@ -23,8 +53,8 @@ const processes: Record<string, SupervisedProcess> = {
     name: 'airllm',
     // We expect Python to be in PATH or configured. For now, use 'python3'
     command: process.platform === 'win32' ? 'python' : 'python3',
-    // Point to the airllm_server.py in the project root
-    args: [path.join(__dirname, '..', '..', 'airllm_server.py')],
+    // Point to the extracted airllm_server.py
+    args: [extractedAirLLMPath],
     process: null,
     restartCount: 0,
     backoffMs: INITIAL_BACKOFF_MS,

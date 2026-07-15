@@ -20,14 +20,19 @@ async function build() {
   });
 
   console.log('Packaging with @yao-pkg/pkg...');
-  // We need to create a simple package.json for pkg to read assets, or pass them directly
-  // We'll configure pkg in package.json directly
   
+  // Copy airllm_server.py to dist so pkg can find it relative to cli.js
+  if (fs.existsSync('airllm_server.py')) {
+    fs.copyFileSync('airllm_server.py', 'dist/airllm_server.py');
+  }
+
   try {
-    execSync('npx pkg dist/cli.js -t node20-linux-x64,node20-win-x64 --out-path dist', { stdio: 'inherit' });
+    execSync('npx pkg package.json -t node20-linux-x64 --out-path dist', { stdio: 'inherit' });
     console.log('Packaging complete!');
     // rename to kurumi-cli
-    if (fs.existsSync('dist/cli')) {
+    if (fs.existsSync('dist/kurumi')) {
+      fs.renameSync('dist/kurumi', 'dist/kurumi-cli');
+    } else if (fs.existsSync('dist/cli')) {
       fs.renameSync('dist/cli', 'dist/kurumi-cli');
     }
   } catch (e) {

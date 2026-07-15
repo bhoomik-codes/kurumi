@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "description": "KURUMI — Local LLM Desktop Client",
   "main": "dist-electron/main.js",
+  "bin": "dist/cli.js",
   "author": "KURUMI Dev",
   "license": "MIT",
   "private": true,
   "pkg": {
     "scripts": "dist/**/*.js",
     "assets": [
-      "node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+      "dist/airllm_server.py"
     ]
   },
   "scripts": {
