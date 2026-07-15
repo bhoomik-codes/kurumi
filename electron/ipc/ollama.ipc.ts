@@ -1,73 +1,118 @@
 import { ipcMain } from 'electron'
-import { ollamaService } from '../services/OllamaService'
+
+const DAEMON_URL = 'http://127.0.0.1:47392'
 
 export function registerOllamaIpc() {
   ipcMain.handle('ollama:status', async () => {
-    return await ollamaService.checkStatus()
+    try {
+      const res = await fetch(`${DAEMON_URL}/health`)
+      return res.ok
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('ollama:models', async () => {
-    return await ollamaService.getModels()
+    try {
+      const res = await fetch(`${DAEMON_URL}/models`)
+      const data = await res.json()
+      return data.ollama || []
+    } catch {
+      return []
+    }
   })
 
   ipcMain.handle('ollama:warmup', async (_event, modelName: string) => {
-    return await ollamaService.warmup(modelName)
+    try {
+      const res = await fetch(`${DAEMON_URL}/warmup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'ollama', model: modelName })
+      })
+      const data = await res.json()
+      return data.ok
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('ollama:warmup:abort', async () => {
-    ollamaService.abortWarmup()
+    // Daemon warmup doesn't support abort currently, just mock it
     return true
   })
 
   ipcMain.handle('ollama:ps', async () => {
-    try {
-      const response = await fetch(`${ollamaService.baseUrl}/api/ps`)
-      if (!response.ok) return null
-      return await response.json()
-    } catch {
-      return null
-    }
+    // not strictly necessary to proxy since we proxy chat, but could proxy if needed
+    return null
   })
 
-  // We use standard event messaging for streaming, not handle.
+  let activeChatAborts = new Map<string, AbortController>()
+
   ipcMain.on('ollama:chat:stream', async (event, args) => {
     const { messages, model, options, replyId } = args
-    ollamaService.abortWarmup()
+    
+    const ac = new AbortController()
+    activeChatAborts.set(replyId, ac)
 
     try {
-      const stream = ollamaService.streamChat(messages, model, options)
+      const response = await fetch(`${DAEMON_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'ollama', model, messages, options }),
+        signal: ac.signal
+      })
 
-      for await (const chunk of stream) {
+      if (!response.ok || !response.body) throw new Error('HTTP ' + response.status)
+
+      // STREAMING PASSTHROUGH CHECK: Piping SSE chunks incrementally to Electron renderer
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
         if (event.sender.isDestroyed()) {
-          ollamaService.abortCurrentStream()
+          ac.abort()
           break
         }
-
-        event.sender.send(`ollama:chat:chunk:${replyId}`, chunk)
-
-        if (chunk.done) {
-          event.sender.send(`ollama:chat:done:${replyId}`, chunk)
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter(Boolean)
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '')
+            try {
+              const data = JSON.parse(dataStr)
+              if (data.error) throw new Error(data.error)
+              
+              event.sender.send(`ollama:chat:chunk:${replyId}`, data)
+              if (data.done) {
+                event.sender.send(`ollama:chat:done:${replyId}`, data)
+              }
+            } catch (e) {
+              // skip parse errors
+            }
+          }
         }
       }
     } catch (error: any) {
       if (!event.sender.isDestroyed()) {
         event.sender.send(`ollama:chat:error:${replyId}`, error.message)
       }
+    } finally {
+      activeChatAborts.delete(replyId)
     }
   })
 
   ipcMain.on('ollama:pull:start', async (event, modelName: string) => {
     try {
-      const response = await fetch(`${ollamaService.baseUrl}/api/pull`, {
+      const response = await fetch(`${DAEMON_URL}/pull`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: modelName, stream: true })
+        body: JSON.stringify({ model: modelName })
       })
 
-      if (!response.ok || !response.body) {
-        event.sender.send('ollama:pull:error', `HTTP ${response.status}: ${response.statusText}`)
-        return
-      }
+      if (!response.ok || !response.body) throw new Error('Pull failed')
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
@@ -79,11 +124,9 @@ export function registerOllamaIpc() {
 
         const chunk = decoder.decode(value, { stream: true })
         const lines = chunk.split('\n').filter(Boolean)
-
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line)
-            // data: { status, digest, total, completed }
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.replace('data: ', ''))
             const percent = data.total && data.completed
               ? Math.round((data.completed / data.total) * 100)
               : null
@@ -93,10 +136,9 @@ export function registerOllamaIpc() {
               total: data.total,
               completed: data.completed,
             })
-          } catch { /* skip malformed lines */ }
+          }
         }
       }
-
       event.sender.send('ollama:pull:done')
     } catch (err: any) {
       if (!event.sender.isDestroyed()) {
@@ -106,16 +148,21 @@ export function registerOllamaIpc() {
   })
 
   ipcMain.handle('ollama:delete', async (event, modelName: string) => {
-    const response = await fetch(`${ollamaService.baseUrl}/api/delete`, {
-      method: 'DELETE',
+    const response = await fetch(`${DAEMON_URL}/delete`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: modelName })
+      body: JSON.stringify({ provider: 'ollama', model: modelName })
     })
-    if (!response.ok) throw new Error(`Delete failed: ${response.statusText}`)
+    const data = await response.json()
+    if (!data.ok) throw new Error(data.error)
     return true
   })
 
-  ipcMain.on('ollama:chat:abort', () => {
-    ollamaService.abortCurrentStream()
+  ipcMain.on('ollama:chat:abort', (event, replyId) => {
+    // Only abort the specific stream in this process
+    if (replyId && activeChatAborts.has(replyId)) {
+      activeChatAborts.get(replyId)?.abort()
+      activeChatAborts.delete(replyId)
+    }
   })
 }

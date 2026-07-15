@@ -1,64 +1,92 @@
-// airllm.ipc.ts — IPC handlers for the local AirLLM streaming server.
-// Mirrors the structure of nvidia.ipc.ts exactly so Chat.tsx can use
-// the same event-based streaming pattern.
-
 import { ipcMain } from 'electron'
-import { airllmService } from '../services/AirLLMService'
+
+const DAEMON_URL = 'http://127.0.0.1:47392'
 
 export function registerAirLLMIpc() {
-  // ── Health check ────────────────────────────────────────────────────────────
   ipcMain.handle('airllm:status', async () => {
-    return await airllmService.checkStatus()
-  })
-
-  // ── Model list ───────────────────────────────────────────────────────────────
-  ipcMain.handle('airllm:models', async () => {
-    return await airllmService.getModels()
-  })
-
-  // ── Streaming chat ───────────────────────────────────────────────────────────
-  ipcMain.on('airllm:chat:stream', async (event, args: {
-    messages: { role: string; content: string }[]
-    model: string
-    replyId: string
-    options?: { max_tokens?: number; temperature?: number; top_p?: number }
-  }) => {
-    const { messages, model, replyId, options } = args
-    console.log(`[AirLLM IPC] Stream request — model: ${model}, replyId: ${replyId}`)
-
     try {
-      const stream = airllmService.streamChat(messages, model, options ?? {})
-      let chunksSent = 0
-
-      for await (const chunk of stream) {
-        if (event.sender.isDestroyed()) {
-          console.warn('[AirLLM IPC] Renderer destroyed, aborting stream')
-          airllmService.abort()
-          break
-        }
-
-        if (chunk.done) {
-          console.log(`[AirLLM IPC] Stream complete — ${chunksSent} content chunks sent`)
-          event.sender.send(`airllm:chat:done:${replyId}`, chunk)
-          break
-        }
-
-        if (chunk.content) {
-          chunksSent++
-          event.sender.send(`airllm:chat:chunk:${replyId}`, chunk)
-        }
-      }
-    } catch (error: any) {
-      console.error('[AirLLM IPC] Stream error:', error.message)
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`airllm:chat:error:${replyId}`, error.message)
-      }
+      const res = await fetch(`${DAEMON_URL}/health`)
+      const data = await res.json()
+      return data.airllm === 'running' || data.airllm === 'active'
+    } catch {
+      return false
     }
   })
 
-  // ── Abort ────────────────────────────────────────────────────────────────────
-  ipcMain.on('airllm:chat:abort', () => {
-    console.log('[AirLLM IPC] Abort requested')
-    airllmService.abort()
+  ipcMain.handle('airllm:models', async () => {
+    try {
+      const res = await fetch(`${DAEMON_URL}/models`)
+      const data = await res.json()
+      return data.airllm || []
+    } catch {
+      return []
+    }
+  })
+
+  let activeChatAborts = new Map<string, AbortController>()
+
+  ipcMain.on('airllm:chat:stream', async (event, args) => {
+    const { messages, model, options, replyId } = args
+    
+    const ac = new AbortController()
+    activeChatAborts.set(replyId, ac)
+
+    try {
+      const response = await fetch(`${DAEMON_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'airllm', model, messages, options }),
+        signal: ac.signal
+      })
+
+      if (!response.ok || !response.body) throw new Error('HTTP ' + response.status)
+
+      // STREAMING PASSTHROUGH CHECK: Piping SSE chunks incrementally to Electron renderer
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (event.sender.isDestroyed()) {
+          ac.abort()
+          break
+        }
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter(Boolean)
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '')
+            try {
+              const data = JSON.parse(dataStr)
+              if (data.error) throw new Error(data.error)
+              
+              if (data.content) {
+                event.sender.send(`airllm:chat:chunk:${replyId}`, data)
+              }
+              if (data.done) {
+                event.sender.send(`airllm:chat:done:${replyId}`, data)
+              }
+            } catch (e) {
+              // skip parse errors
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`airllm:chat:error:${replyId}`, error.message)
+      }
+    } finally {
+      activeChatAborts.delete(replyId)
+    }
+  })
+
+  ipcMain.on('airllm:chat:abort', (event, replyId) => {
+    if (replyId && activeChatAborts.has(replyId)) {
+      activeChatAborts.get(replyId)?.abort()
+      activeChatAborts.delete(replyId)
+    }
   })
 }

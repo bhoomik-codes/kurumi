@@ -1,77 +1,123 @@
 import { ipcMain } from 'electron'
-import { nvidiaService, NVIDIA_FEATURED_MODELS } from '../services/NvidiaService'
+
+const DAEMON_URL = 'http://127.0.0.1:47392'
+
+export const NVIDIA_FEATURED_MODELS = [
+  { id: 'meta/llama-3.1-8b-instruct',              label: 'Llama 3.1 8B Instruct',   tag: 'Meta (Cloud)'     },
+  { id: 'meta/llama-3.3-70b-instruct',             label: 'Llama 3.3 70B Instruct',  tag: 'Meta (Cloud)'     },
+  { id: 'meta/llama-3.1-405b-instruct',            label: 'Llama 3.1 405B Instruct', tag: 'Meta (Cloud)'     },
+  { id: 'nvidia/llama-3.3-nemotron-super-49b-v1',  label: 'Nemotron Super 49B',       tag: 'NVIDIA (Cloud)'   },
+  { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', label: 'Nemotron Ultra 253B',      tag: 'NVIDIA (Cloud)'   },
+  { id: 'google/gemma-3-27b-it',                   label: 'Gemma 3 27B',              tag: 'Google (Cloud)'   },
+  { id: 'google/gemma-3-12b-it',                   label: 'Gemma 3 12B',              tag: 'Google (Cloud)'   },
+  { id: 'ai21labs/jamba-1.5-large-instruct',       label: 'Jamba 1.5 Large',          tag: 'AI21 (Cloud)'     },
+  { id: 'databricks/dbrx-instruct',                label: 'DBRX Instruct',            tag: 'Databricks(Cloud)'},
+  { id: 'bytedance/seed-oss-36b-instruct',         label: 'Seed OSS 36B',             tag: 'ByteDance(Cloud)' },
+]
 
 export function registerNvidiaIpc() {
-  // ── Validate API key ─────────────────────────────────────────────────────
   ipcMain.handle('nvidia:check', async (_e, apiKey: string) => {
-    console.log('[NVIDIA IPC] Checking API key...')
-    const result = await nvidiaService.checkKey(apiKey)
-    console.log('[NVIDIA IPC] Key check result:', result)
-    return result
+    try {
+      const res = await fetch(`${DAEMON_URL}/nvidia/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey })
+      })
+      return await res.json()
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
   })
 
-  // ── List generative models ────────────────────────────────────────────────
   ipcMain.handle('nvidia:models', async (_e, apiKey: string) => {
     if (!apiKey) {
-      console.log('[NVIDIA IPC] No API key, returning featured models')
       return NVIDIA_FEATURED_MODELS
     }
-    return await nvidiaService.getModels(apiKey)
+    try {
+      const res = await fetch(`${DAEMON_URL}/models?nvidiaApiKey=${apiKey}`)
+      const data = await res.json()
+      // Tag models with (Cloud) to ensure users know it requires connectivity
+      return (data.nvidia || []).map((m: any) => ({
+        ...m,
+        tag: m.tag.includes('Cloud') ? m.tag : `${m.tag} (Cloud)`
+      }))
+    } catch {
+      return NVIDIA_FEATURED_MODELS
+    }
   })
 
-  // ── Streaming chat ────────────────────────────────────────────────────────
-  ipcMain.on('nvidia:chat:stream', async (event, args: {
-    messages: { role: string; content: string }[]
-    model: string
-    apiKey: string
-    replyId: string
-    options?: { temperature?: number; top_p?: number; max_tokens?: number }
-  }) => {
-    const { messages, model, apiKey, replyId, options } = args
-    console.log(`[NVIDIA IPC] Stream request — model: ${model}, replyId: ${replyId}`)
+  let activeChatAborts = new Map<string, AbortController>()
 
+  ipcMain.on('nvidia:chat:stream', async (event, args) => {
+    const { messages, model, apiKey, replyId, options } = args
+    
     if (!apiKey) {
       const errMsg = 'No NVIDIA API key provided. Add one in Settings.'
-      console.error('[NVIDIA IPC]', errMsg)
       if (!event.sender.isDestroyed()) {
         event.sender.send(`nvidia:chat:error:${replyId}`, errMsg)
       }
       return
     }
 
+    const ac = new AbortController()
+    activeChatAborts.set(replyId, ac)
+
     try {
-      const stream = nvidiaService.streamChat(messages, model, apiKey, options ?? {})
-      let chunksSent = 0
+      const response = await fetch(`${DAEMON_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'nvidia', model, messages, apiKey, options }),
+        signal: ac.signal
+      })
 
-      for await (const chunk of stream) {
+      if (!response.ok || !response.body) throw new Error('HTTP ' + response.status)
+
+      // STREAMING PASSTHROUGH CHECK: Piping SSE chunks incrementally to Electron renderer
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
         if (event.sender.isDestroyed()) {
-          console.warn('[NVIDIA IPC] Renderer destroyed, aborting stream')
-          nvidiaService.abort()
+          ac.abort()
           break
         }
-
-        if (chunk.done) {
-          console.log(`[NVIDIA IPC] Stream complete — ${chunksSent} content chunks sent`)
-          event.sender.send(`nvidia:chat:done:${replyId}`, chunk)
-          break
-        }
-
-        if (chunk.content) {
-          chunksSent++
-          event.sender.send(`nvidia:chat:chunk:${replyId}`, chunk)
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter(Boolean)
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '')
+            try {
+              const data = JSON.parse(dataStr)
+              if (data.error) throw new Error(data.error)
+              
+              if (data.content !== undefined) { // NVIDIA may send empty content for start chunk
+                event.sender.send(`nvidia:chat:chunk:${replyId}`, data)
+              }
+              if (data.done) {
+                event.sender.send(`nvidia:chat:done:${replyId}`, data)
+              }
+            } catch (e) {
+              // skip parse errors
+            }
+          }
         }
       }
     } catch (error: any) {
-      console.error('[NVIDIA IPC] Stream error:', error.message)
       if (!event.sender.isDestroyed()) {
         event.sender.send(`nvidia:chat:error:${replyId}`, error.message)
       }
+    } finally {
+      activeChatAborts.delete(replyId)
     }
   })
 
-  // ── Abort ─────────────────────────────────────────────────────────────────
-  ipcMain.on('nvidia:chat:abort', () => {
-    console.log('[NVIDIA IPC] Abort requested')
-    nvidiaService.abort()
+  ipcMain.on('nvidia:chat:abort', (event, replyId) => {
+    if (replyId && activeChatAborts.has(replyId)) {
+      activeChatAborts.get(replyId)?.abort()
+      activeChatAborts.delete(replyId)
+    }
   })
 }

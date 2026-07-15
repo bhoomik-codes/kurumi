@@ -9,8 +9,40 @@ import { registerNvidiaIpc } from './ipc/nvidia.ipc'
 import { registerAirLLMIpc } from './ipc/airllm.ipc'
 import { registerImageGenIpc } from './ipc/imagegen.ipc'
 import { registerVoiceIpc } from './ipc/voice.ipc'
-import { workerManager } from './services/WorkerManager'
-import { appendRagWorkerLog } from './services/ragDiagnostics'
+import { spawn } from 'child_process'
+import path from 'path'
+
+const DAEMON_URL = 'http://127.0.0.1:47392'
+
+async function checkDaemonHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${DAEMON_URL}/health`, { signal: AbortSignal.timeout(1000) })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+async function ensureDaemon(): Promise<void> {
+  const isHealthy = await checkDaemonHealth()
+  if (isHealthy) return
+
+  console.log('[main] Starting background daemon (kurumid)...')
+  
+  // Use tsx for dev, or compiled server for prod. We assume tsx for now.
+  const daemonScript = path.join(__dirname, '..', 'src', 'daemon', 'server.ts')
+  const child = spawn('npx', ['tsx', daemonScript], {
+    detached: true,
+    stdio: 'ignore'
+  })
+  child.unref()
+
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 500))
+    if (await checkDaemonHealth()) return
+  }
+  console.error('[main] Daemon failed to start.')
+}
 
 /** Linux containers: Chromium shared memory + sandbox flags (see Docker README). */
 if (process.env.KURUMI_DOCKER === '1') {
@@ -87,10 +119,10 @@ async function createWindow() {
 }
 
 // App lifecycle
-app.whenReady().then(() => {
-  appendRagWorkerLog(
-    `Main process ready userData=${app.getPath('userData')} packaged=${app.isPackaged} exec=${process.execPath}`
-  )
+app.whenReady().then(async () => {
+  console.log(`Main process ready userData=${app.getPath('userData')} packaged=${app.isPackaged}`)
+
+  await ensureDaemon()
 
   createWindow()
   registerSqliteIpc()
@@ -102,12 +134,6 @@ app.whenReady().then(() => {
   registerAirLLMIpc()
   registerImageGenIpc()
   registerVoiceIpc()
-
-  void workerManager.runStartupHealthCheck().then((h) => {
-    if (!h.ok) {
-      console.error('[RAG] LanceDB / worker health check failed:', h.error)
-    }
-  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -123,17 +149,11 @@ app.on('window-all-closed', () => {
 })
 
 let ragWorkerQuitHandled = false
-app.on('before-quit', async (event) => {
+app.on('before-quit', (event) => {
   if (ragWorkerQuitHandled) return
-  event.preventDefault()
   ragWorkerQuitHandled = true
-  try {
-    await workerManager.shutdown()
-  } catch (e) {
-    console.error('[RAG worker] shutdown error:', e)
-  } finally {
-    app.quit()
-  }
+  // The daemon is detached and will persist (or we could fetch('/shutdown') if we wanted)
+  app.quit()
 })
 
 // Basic window controls IPC

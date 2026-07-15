@@ -1,3 +1,7 @@
+# KURUMI
+
+> **⚠️ IMPORTANT ARCHITECTURE CHANGE:** The `kurumi` command now launches the interactive Terminal UI (TUI). To launch the traditional Electron GUI, run `kurumi run` instead.
+
 <div align="center">
 
 ```
