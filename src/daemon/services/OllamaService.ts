@@ -1,5 +1,5 @@
 export class OllamaService {
-  public baseUrl = 'http://localhost:11434'
+  public baseUrl = `http://${process.env.OLLAMA_HOST || '127.0.0.1'}:${process.env.OLLAMA_PORT || '11434'}`
   private abortController: AbortController | null = null
   private warmupAbort: AbortController | null = null
 

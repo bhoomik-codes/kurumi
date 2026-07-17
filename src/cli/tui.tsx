@@ -11,9 +11,10 @@ const DAEMON_URL = `http://${daemonHost}:${daemonPort}`
 
 interface TuiOptions {
   systemInstructions?: string | null
+  loadedInstructionFiles?: string[]
 }
 
-const ChatApp = ({ systemInstructions }: TuiOptions) => {
+export const ChatApp = ({ systemInstructions, loadedInstructionFiles }: TuiOptions) => {
   const { exit } = useApp()
   const [messages, setMessages] = useState<Message[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
@@ -38,10 +39,18 @@ const ChatApp = ({ systemInstructions }: TuiOptions) => {
   })
 
   useEffect(() => {
+    const initialMsgs: Message[] = []
     if (systemInstructions) {
-      setMessages([{ role: 'system', content: systemInstructions }])
+      initialMsgs.push({ role: 'system', content: systemInstructions })
     }
-  }, [systemInstructions])
+    if (loadedInstructionFiles && loadedInstructionFiles.length > 0) {
+      initialMsgs.push({ 
+        role: 'assistant', 
+        content: `*Loaded system instructions from:*\n${loadedInstructionFiles.map(f => `- \`${f}\``).join('\n')}`
+      })
+    }
+    setMessages(initialMsgs)
+  }, [systemInstructions, loadedInstructionFiles])
 
   const handleInterrupt = () => {
     if (abortControllerRef.current) {

@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 
-const DAEMON_URL = 'http://127.0.0.1:47392'
+import dotenv from 'dotenv';
+dotenv.config();
+const DAEMON_URL = `http://${process.env.KURUMI_DAEMON_HOST || '127.0.0.1'}:${process.env.KURUMI_DAEMON_PORT || '47392'}`
 
 export const NVIDIA_FEATURED_MODELS = [
   { id: 'meta/llama-3.1-8b-instruct',              label: 'Llama 3.1 8B Instruct',   tag: 'Meta (Cloud)'     },

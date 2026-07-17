@@ -205,406 +205,66 @@ Inspired by the visual brutality of **Jujutsu Kaisen**, KURUMI's "Cursed Blood" 
 
 ## ✦ Architecture
 
-```text
-kurumi/                            ← Repository root (Electron app)
-├── electron/                      ← Main process (Node.js)
-│   ├── main.ts                    ← App lifecycle, window, CSP
-│   ├── preload.ts                 ← Secure contextBridge IPC bridge
-│   ├── ipc/                       ← IPC channel handlers
-│   │   ├── ollama.ipc.ts          ← Chat streaming, model list, pull, delete
-│   │   ├── sqlite.ipc.ts          ← Conversation & message CRUD
-│   │   ├── store.ipc.ts           ← Ollama library + HuggingFace API proxy
-│   │   ├── rag.ipc.ts             ← RAG document index/search/delete
-│   │   ├── imagegen.ipc.ts        ← A1111 txt2img / img2img / checkpoints / save
-│   │   ├── nvidia.ipc.ts          ← NVIDIA NIM cloud model proxy
-│   │   ├── system.ipc.ts          ← System info (CPU, RAM, GPU)
-│   │   └── voice.ipc.ts           ← Whisper STT audio bridge
-│   ├── worker/                    ← UTILITY PROCESS (offloaded heavy workloads)
-│   │   ├── index.ts               ← Worker entry point & message router
-│   │   ├── ragWorkerTasks.ts      ← Document parsing & LanceDB indexing
-│   │   └── voiceWorkerTasks.ts    ← Whisper ONNX STT transcription
-│   ├── services/
-│   │   ├── WorkerManager.ts       ← Spawns & communicates with Utility Process (RPC)
-│   │   ├── DatabaseService.ts     ← SQLite init, schema migrations, FTS5
-│   │   ├── OllamaService.ts       ← fetch-based streaming client
-│   │   ├── ImageGenService.ts     ← Stable Diffusion WebUI bridge
-│   │   ├── NvidiaService.ts       ← NVIDIA NIM REST client
-│   │   ├── DocumentService.ts     ← File upload pipeline entry
-│   │   ├── ParseService.ts        ← PDF / DOCX / XLSX / TXT text extraction
-│   │   ├── embeddingRuntime.ts    ← @xenova/transformers embedding pipeline
-│   │   ├── vectorStoreCore.ts     ← LanceDB connection, insert, cosine search
-│   │   ├── ragChunking.ts         ← 512-token chunking with overlap
-│   │   ├── ragDiagnostics.ts      ← Startup health-check & log appender
-│   │   ├── imageGenPayload.ts     ← Pure helpers for A1111 payloads
-│   │   └── imageGenPayload.test.ts← Vitest unit tests for payload helpers
-│   └── utils/
-│       └── ipcLogger.ts           ← Structured IPC error logging (dev)
-├── src/                           ← Renderer process (React + TypeScript)
-│   ├── main.tsx                   ← React DOM entry point
-│   ├── App.tsx                    ← Router & layout shell
-│   ├── pages/
-│   │   ├── Chat.tsx               ← Main chat interface
-│   │   ├── Models.tsx             ← Installed model manager
-│   │   ├── ModelStore.tsx         ← Live Ollama + HuggingFace browser
-│   │   ├── Documents.tsx          ← RAG Knowledge Base manager
-│   │   ├── ImageGen.tsx           ← Image Generation Studio
-│   │   ├── Settings.tsx           ← App configuration & Voice settings
-│   │   ├── SystemInfo.tsx         ← Hardware stats overlay
-│   │   └── OllamaSetup.tsx        ← First-run Ollama onboarding
-│   ├── components/
-│   │   ├── chat/
-│   │   │   ├── MessageBubble.tsx      ← User/assistant message renderer
-│   │   │   ├── MarkdownRenderer.tsx   ← Rich markdown + KaTeX + syntax highlight
-│   │   │   ├── ChatInput.tsx          ← Input field + mic button + waveform
-│   │   │   ├── ConversationSidebar.tsx← Chat history with search/pin/delete
-│   │   │   └── CursedWaveform.tsx     ← Real-time voice canvas visualizer
-│   │   ├── artifacts/                 ← Sandboxed artifact rendering engine
-│   │   │   ├── ArtifactContainer.tsx  ← Detects artifact type, routes to renderer
-│   │   │   ├── ReactArtifact.tsx      ← Live React component sandbox (iframe)
-│   │   │   ├── HtmlArtifact.tsx       ← Vanilla HTML/CSS/JS sandbox (iframe)
-│   │   │   ├── MermaidArtifact.tsx    ← Zoomable Mermaid diagram renderer
-│   │   │   ├── ChartArtifact.tsx      ← Recharts / D3 data visualization
-│   │   │   └── CodeArtifact.tsx       ← Syntax-highlighted raw code block
-│   │   ├── rag/
-│   │   │   └── RAGPanel.tsx           ← Document upload, index status, sources
-│   │   ├── layout/
-│   │   │   ├── TopBar.tsx             ← Frameless window controls (min/max/close)
-│   │   │   ├── Sidebar.tsx            ← App navigation rail
-│   │   │   ├── StatusBar.tsx          ← System info status overlay
-│   │   │   └── ParticleBackground.tsx ← Crimson floating particle animation
-│   │   └── ui/
-│   │       ├── CursedButton.tsx       ← Themed button component
-│   │       ├── CursedInput.tsx        ← Themed input component
-│   │       └── GlassPanel.tsx         ← Glassmorphism panel wrapper
-│   ├── stores/
-│   │   ├── chatStore.ts           ← Conversations, messages, stream state (Zustand)
-│   │   ├── modelStore.ts          ← Installed & selected model state
-│   │   ├── voiceStore.ts          ← Voice recording state & TTS settings
-│   │   └── settingsStore.ts       ← App preferences (persisted via electron-store)
-│   ├── hooks/
-│   │   └── useVoice.ts            ← Web Audio API mic capture + SpeechSynthesis TTS
-│   ├── styles/
-│   │   ├── globals.css            ← CSS variables, base reset
-│   │   ├── glass.css              ← Glassmorphism panel styles
-│   │   ├── animations.css         ← Keyframe animations
-│   │   └── fonts.css              ← Typography imports
-│   ├── constants/
-│   │   └── systemPrompt.ts        ← Kurumi persona + formatting instructions
-│   ├── data/
-│   │   └── modelRegistry.ts       ← Curated offline model catalog
-│   └── types/
-│       ├── electron.d.ts          ← window.electronAPI type declarations
-│       └── vite-env.d.ts          ← Vite environment type stubs
-├── assets/                        ← App icons & screenshots
-├── public/                        ← Static web assets
-├── index.html                     ← Vite HTML entry point
-├── vite.config.ts                 ← Vite + Electron plugin config
-├── electron-builder.config.js     ← Packaging, ASAR unpack rules
-├── tsconfig.json                  ← TypeScript (renderer)
-├── tsconfig.node.json             ← TypeScript (main process / Vite)
-├── tailwind.config.ts             ← Tailwind design tokens
-├── postcss.config.cjs             ← PostCSS pipeline
-├── package.json                   ← Scripts, dependencies
-├── Dockerfile                     ← Container build (Debian Bookworm + Node 20)
-└── docker-compose.yml             ← Compose stack (X11 or VNC + optional GPU Ollama)
-```
+KURUMI v2.0 introduces a **Daemon-Client Architecture** to ensure rock-solid reliability and performance:
 
-KURUMI is built on a modern **Multi-Process Architecture** to ensure the interface never drops a frame, no matter how hard the AI is thinking:
+1. **Proxy Daemon (`kurumid`)**: A lightweight background Fastify server that owns all database connections and AI models. 
+2. **Thin Clients**: The Electron GUI, the TUI, and the CLI are all thin clients that talk to the daemon over a local HTTP API.
 
-1. **Main Process (`electron/main.ts`)**: The orchestrator. Handles window management, strict Content Security Policies (CSP), and secure IPC bridges. It also manages the local SQLite database.
-2. **Renderer Process (`src/`)**: The React frontend. Handles the entire "Cursed Blood" UI, Canvas animations, state management (Zustand), and streaming Markdown rendering.
-3. **Utility Process (`electron/worker/`)**: The heavy lifter. AI tasks like LanceDB vector generation (`nomic-embed-text`) and Whisper ONNX local speech transcription are fully isolated here. Because they run in a completely separate OS-level process, the UI remains perfectly fluid at 60FPS even when crunching massive PDFs or audio streams.
-
-All native node modules (`better-sqlite3`, `@lancedb/lancedb`) are pre-compiled against the exact Node version shipped inside Electron to ensure stable standalone executables without missing `.node` binary errors.
-
----
+**Why this change?**
+- **Reliability (Single Writer)**: Previously, the Electron GUI and CLI both tried to write to SQLite simultaneously, causing locking errors. Now, the daemon is the sole writer.
+- **Speed & Memory (Resident Models)**: Large language models take a long time to load into VRAM. By hosting the models in a persistent background daemon, the models stay "warm" between requests. Cold requests take ~15.7s, but warm requests take ~1.0s.
+- **Crash Isolation**: The daemon includes a Supervisor that monitors heavy AI processes like AirLLM. If they crash due to an OOM error, the supervisor restores service after an unexpected exit without bringing down the UI.
 
 ## ✦ Prerequisites
 
 Before running KURUMI, ensure you have:
 
-| Requirement | Version | Notes |
-|---|---|---|
-| [Node.js](https://nodejs.org) | 20+ | LTS recommended |
-| [Ollama](https://ollama.com) | Latest | Must be running (`ollama serve`) |
-| At least one LLM | Any | `ollama pull llama3.2:3b` |
-| Optional: AUTOMATIC1111 WebUI | Local | For Image Gen (`--api` enabled; default port 7860) |
-| Optional: ComfyUI | Local | Connection test only in this build (port 8188 typical) |
-| Git | Any | For cloning |
-| RAM | 4 GB minimum | 8 GB+ recommended for 7B+ models |
-
----
-
-## 🔬 AirLLM — Run 30B, 40B, 70B Models on Consumer GPUs
-
-KURUMI integrates [AirLLM](https://github.com/lyogavin/airllm), a library that lets you run frontier-scale models (30B, 40B, 70B, even 405B parameters) on a **single GPU with as little as 4 GB VRAM** — without quantization, distillation, or cloud calls.
-
-It works by splitting the model into per-layer shard files and streaming them through GPU memory one layer at a time. Your data stays completely local.
-
-### Hardware Requirements for AirLLM
-
-| Model Size | Min VRAM | Disk Space (fp16) |
-|---|---|---|
-| 7B | 4 GB | ~14 GB |
-| 30–32B | 4–5 GB | ~60 GB |
-| 40B | 5–6 GB | ~80 GB |
-| 70B | 6–8 GB | ~140 GB |
-
-> **Disk space is the real bottleneck.** Use `AIRLLM_SHARD_DIR` to point at a large drive.
-
-### Quick Start with `kurumi.sh`
-
-Everything is managed by the `kurumi.sh` launcher script that ships in this repo.
-
-**1. Install dependencies (first time only)**
-
-```bash
-cd kurumi-electron
-./kurumi.sh setup
-```
-
-**2. Set the global alias** (add to your shell forever)
-
-```bash
-echo "alias kurumi='$(pwd)/kurumi.sh'" >> ~/.bashrc
-source ~/.bashrc
-```
-
-**3. Start KURUMI (normal Ollama mode)**
-
-```bash
-kurumi
-```
-
-**4. Start KURUMI with AirLLM (big model mode)**
-
-```bash
-# Default: Qwen 7B (quick test)
-kurumi airllm
-
-# Run a 32B model
-AIRLLM_MODEL='Qwen/Qwen2.5-32B-Instruct' kurumi airllm
-
-# Run a 70B LLaMA on a large external drive
-AIRLLM_MODEL='meta-llama/Meta-Llama-3-70B-Instruct' \
-AIRLLM_SHARD_DIR='/mnt/bigdrive/shards' \
-HF_TOKEN='hf_xxx' \
-kurumi airllm
-
-# Run a 70B model with 4-bit compression (saves ~75% disk)
-AIRLLM_MODEL='meta-llama/Meta-Llama-3-70B-Instruct' \
-AIRLLM_COMPRESSION='4bit' \
-kurumi airllm
-```
-
-**5. Start the AirLLM server only (headless, for debugging)**
-
-```bash
-AIRLLM_MODEL='Qwen/Qwen2.5-32B-Instruct' kurumi server
-```
-
-### All `kurumi` Commands
-
-| Command | Description |
+| Requirement | Notes |
 |---|---|
-| `kurumi` | Start KURUMI normally (Ollama / NVIDIA mode) |
-| `kurumi airllm` | Start AirLLM server + KURUMI together |
-| `kurumi server` | Start AirLLM server only (headless) |
-| `kurumi setup` | Install all Node.js + Python dependencies |
-| `kurumi help` | Show full help with examples |
-
-### AirLLM Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `AIRLLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | HuggingFace model ID or local path |
-| `AIRLLM_SHARD_DIR` | `~/airllm_shards` | Where to store per-layer shard files |
-| `AIRLLM_PORT` | `8765` | API server port |
-| `AIRLLM_DEVICE` | `cuda:0` | PyTorch device |
-| `AIRLLM_MAX_SEQ_LEN` | `512` | Max input tokens (lower = less VRAM) |
-| `AIRLLM_COMPRESSION` | *(none)* | `4bit` or `8bit` — saves disk space |
-| `HF_TOKEN` | *(none)* | Required for gated models (LLaMA, Gemma) |
-
-### How It Works in KURUMI
-
-1. `kurumi airllm` starts `airllm_server.py` in the background on port `8765`.
-2. The server exposes an **OpenAI-compatible `/v1/chat/completions` API**.
-3. KURUMI's **AirLLM provider** appears as a third toggle in the chat header (purple `🧠 AirLLM` button).
-4. When AirLLM is selected, all messages are routed through `electron/ipc/airllm.ipc.ts` → `electron/services/AirLLMService.ts` → the local Python server.
-5. The server runs AirLLM inference and streams tokens back word-by-word in SSE format.
-
-The AirLLM button is **greyed out** when the server is offline, so switching to it by accident is impossible.
-
-### For Contributors Cloning This Repo
-
-```bash
-git clone https://github.com/bhoomik-codes/kurumi.git
-cd kurumi
-./kurumi.sh setup   # installs npm deps + Python airllm/fastapi/uvicorn
-
-# Normal use (no big models needed)
-kurumi
-
-# Or with AirLLM
-AIRLLM_MODEL='Qwen/Qwen2.5-7B-Instruct' kurumi airllm
-```
-
-No Python environment management is needed — `kurumi setup` installs into whatever `python3` is on your `PATH`. If you prefer a venv, activate it before running `kurumi setup`.
+| [Node.js](https://nodejs.org) (v20+) | Required for compiling and running from source |
+| Python 3 & pip | Required for AirLLM frontier models |
+| [Ollama](https://ollama.com) | The primary backend for local inference |
 
 ---
 
-## 🐳 Docker Setup
+## 🌱 Complete Setup Guide
 
-Run KURUMI (Electron 30, `@lancedb/lancedb`, `better-sqlite3`, RAG utility process) inside a Debian Bookworm + Node 20 image. Native modules are rebuilt with `electron-rebuild` in the container so binaries match the Linux glibc inside the image—no more host/ABI mismatch.
-
-### Prerequisites (Docker path only)
-
-- [Docker Engine](https://docs.docker.com/engine/install/) 24+
-- [Docker Compose](https://docs.docker.com/compose/install/) v2 (`docker compose`)
-
-You do **not** need Node.js or a local `npm install` on the host for this path.
-
-### Build and run
-
-From the **repository root** (where `docker-compose.yml` lives):
-
+### Step 1: Download KURUMI
 ```bash
-docker compose up --build
-```
-
-On first launch, allow the GUI stack to finish compiling; the Electron window should appear on your display (X11) or in the browser (noVNC), depending on `KURUMI_GUI_MODE` below.
-
-### Data persistence
-
-Compose mounts a named volume on `XDG_CONFIG_HOME=/kurumi/persist`. Electron resolves `app.getPath('userData')` to `/kurumi/persist/kurumi`, which holds:
-
-- SQLite (`kurumi.db`) and FTS index
-- LanceDB / `vectorstore/`
-- Hugging Face cache for embeddings (`hf-cache/`)
-- Logs such as `logs/rag-worker.log`
-
-The volume `kurumi-userdata` survives `docker compose down`; remove it only if you intend to wipe local data: `docker volume rm local-guide_kurumi-userdata` (prefix may match your project directory name).
-
-### GUI: X11 (default)
-
-The compose file passes through `DISPLAY` and `/tmp/.X11-unix` so the container draws on your host X server.
-
-**Fedora / Linux (host X11)**
-
-```bash
-xhost +local:docker
-docker compose up --build
-```
-
-If the window does not appear, confirm `echo $DISPLAY` (often `:0` or `:1`) and that you are in the same graphical session.
-
-**Windows (VcXsrv or Xming)**
-
-1. Start VcXsrv (or Xming) with “Disable access control” or add your Docker/WSL subnet to X11 access control.
-2. Set `DISPLAY` before compose, e.g. `set DISPLAY=host.docker.internal:0` in **cmd**, or in PowerShell: `$env:DISPLAY='host.docker.internal:0'`.
-3. Run `docker compose up --build` from the repo root.
-
-**macOS**
-
-Install [XQuartz](https://www.xquartz.org/), log out and back in, then `xhost +localhost` and use `DISPLAY=host.docker.internal:0` (or your LAN IP) when launching compose.
-
-### GUI: VNC / noVNC (no host X11)
-
-Run the stack with an in-container TigerVNC display and noVNC on port **6080**:
-
-```bash
-KURUMI_GUI_MODE=vnc docker compose up --build
-```
-
-Open a browser on the host to `http://127.0.0.1:6080/vnc.html` and connect (passwordless VNC is intended for **local dev only**).
-
-### Ollama endpoint from inside the container
-
-`localhost` inside the container is **not** your host. Either:
-
-- Run Ollama on the host and, in **KURUMI → Settings**, set the Ollama base URL to `http://host.docker.internal:11434` (Docker Desktop / Compose with `host-gateway`), or to your host’s LAN IP on pure Linux Docker, **or**
-- Use **host networking** on Linux (`docker compose` override or `docker run --network host`) so `http://localhost:11434` matches the host, **or**
-- Start the bundled Ollama service (below) and point KURUMI at `http://ollama-service:11434`.
-
-### Optional Compose service: Ollama + NVIDIA GPU
-
-For machines such as the **Acer Nitro** line with an NVIDIA GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) on the host so Docker can schedule GPU workloads. Then enable the profile:
-
-```bash
-docker compose --profile ollama-gpu up --build
-```
-
-This starts `ollama/ollama` with the Compose `gpus` device request for **all** NVIDIA GPUs (same effect as `docker run --gpus all`). In KURUMI **Settings**, set the Ollama URL to `http://ollama-service:11434`. Models are stored in the `ollama-models` named volume.
-
-The `kurumi-app` service does **not** require a GPU; only the optional `ollama-service` uses GPU passthrough when that profile is active.
-
-### Graceful shutdown
-
-The main process handles `SIGTERM` / `SIGINT` by calling `app.quit()`, which runs the existing `before-quit` path: the RAG utility process receives a `shutdown` RPC (LanceDB / workers), then SQLite is closed as the app exits. Compose should stop with `docker compose stop` (or Ctrl+C) rather than `docker kill` whenever possible.
-
-### Environment reference
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `KURUMI_DOCKER` | `1` in image | Enables container-safe Chromium flags in `electron/main.ts`. |
-| `KURUMI_DEBUG_WORKER` | `1` in compose | Mirrors RAG worker stdout into the container logs. |
-| `KURUMI_GUI_MODE` | `x11` | `x11` uses host `DISPLAY`; `vnc` starts TigerVNC + noVNC. |
-| `DISPLAY` | `:0` | Host X11 display socket mapping. |
-| `XDG_CONFIG_HOME` | `/kurumi/persist` | Root for Electron `userData` (`…/kurumi`). |
-
----
-
-## 🌱 Complete Newbie Setup Guide
-
-If you've never run local AI before, don't worry. This guide will take you from zero to fully operational in minutes.
-
-### Step 1: Install the Prerequisites
-
-KURUMI runs entirely on your hardware, which means it requires a few standard tools to run:
-1. **[Node.js](https://nodejs.org)**: Download and install the **LTS (Long Term Support)** version. This gives your computer the engine needed to run JavaScript desktop applications.
-2. **[Git](https://git-scm.com/downloads)**: Download and install Git. This lets you securely download the KURUMI codebase to your machine.
-3. **[Ollama](https://ollama.com)**: This is the actual AI engine that runs the models locally. Download, install, and leave it running in the background.
-
-### Step 2: Download Your First AI Model
-
-Once Ollama is installed, open your Terminal (Mac/Linux) or Command Prompt/PowerShell (Windows) and type:
-
-```bash
-ollama pull llama3.2:3b
-```
-*This downloads a highly optimized, lightning-fast model from Meta (about 2GB). Leave the terminal open while it downloads.*
-
-### Step 3: Clone and Install KURUMI
-
-In that same terminal, type these commands one by one, pressing Enter after each:
-
-```bash
-# 1. Download the KURUMI code
 git clone https://github.com/bhoomik-codes/kurumi.git
-
-# 2. Enter the project folder
 cd kurumi
-
-# 3. Install all the necessary app dependencies
 npm install
 ```
 
-### Step 4: Launch the Application
-
-You're ready! Start the app with:
-
+### Step 2: Configure Environment
+Copy the example environment file:
 ```bash
-npm run dev
+cp .env.example .env
 ```
+Edit `.env` if you need to change ports, log levels, or add your NVIDIA API key for cloud fallback. Defaults are provided for all local services.
 
-The KURUMI window will open automatically. It will instantly connect to your local Ollama instance, detect the model you downloaded, and you can start chatting completely offline!
+### Step 3: Run Setup & Doctor
+Install all necessary Python dependencies and verify the environment:
+```bash
+npm run build:cli
+./dist/kurumi-cli setup
+./dist/kurumi-cli doctor
+```
+*(The doctor command will verify your GPU, Daemon, Ollama, and SQLite health before you start).*
 
-### (Optional) Step 5: Connect Cloud Models (NVIDIA NIM)
-If your computer struggles to run local models, you can connect to massive cloud models for free:
-1. Click the **Settings** (gear) icon in the KURUMI sidebar.
-2. Scroll to the **Cloud Models (NVIDIA NIM)** section.
-3. Grab a free API key from [build.nvidia.com](https://build.nvidia.com) and paste it there.
-4. You can now select massive 405B frontier models directly from the chat interface!
+### Step 4: Run KURUMI
+
+| Command | Description |
+|---|---|
+| `./dist/kurumi-cli` | Launch the interactive Terminal UI (TUI) |
+| `./dist/kurumi-cli --ask "..."` | Ask a quick one-shot question from the terminal |
+| `./dist/kurumi-cli run` | Launch the Electron GUI |
+| `./dist/kurumi-cli setup` | Install all dependencies |
+| `./dist/kurumi-cli server` | Start the background daemon only |
+| `./dist/kurumi-cli doctor` | Run environment health checks |
+| `./dist/kurumi-cli help` | Show full help |
+
+> **Breaking Change:** Running `kurumi` (or the CLI binary) now opens the TUI by default. Use `kurumi run` to open the Electron GUI.
 
 ---
 

@@ -136,7 +136,9 @@ export function getProcessStatus(name: string): boolean {
 
 export async function ensureOllama() {
   try {
-    const res = await fetch('http://127.0.0.1:11434', { signal: AbortSignal.timeout(2000) })
+    const ollamaHost = process.env.OLLAMA_HOST || '127.0.0.1'
+    const ollamaPort = process.env.OLLAMA_PORT || '11434'
+    const res = await fetch(`http://${ollamaHost}:${ollamaPort}`, { signal: AbortSignal.timeout(2000) })
     if (res.ok) {
       ollamaLogger.info('Ollama is already running externally. Attached as unowned.')
       processes.ollama.owned = false

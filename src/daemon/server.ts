@@ -25,9 +25,10 @@ app.get('/health', async (request, reply) => {
 
 app.get('/models', async (request, reply) => {
   const query = request.query as { nvidiaApiKey?: string }
+  const nvidiaKey = query.nvidiaApiKey || process.env.NVIDIA_API_KEY || ''
   const ollama = await ollamaService.getModels()
   const airllm = await airllmService.getModels()
-  const nvidia = await nvidiaService.getModels(query.nvidiaApiKey || '')
+  const nvidia = await nvidiaService.getModels(nvidiaKey)
   return {
     ollama,
     airllm,
@@ -37,7 +38,8 @@ app.get('/models', async (request, reply) => {
 
 app.post('/nvidia/check', async (request, reply) => {
   const { apiKey } = request.body as { apiKey: string }
-  return nvidiaService.checkKey(apiKey)
+  const keyToCheck = apiKey || process.env.NVIDIA_API_KEY || ''
+  return nvidiaService.checkKey(keyToCheck)
 })
 
 app.get('/history', async (request, reply) => {
@@ -65,16 +67,28 @@ app.post('/chat', async (request, reply) => {
     if (provider === 'airllm') {
       stream = airllmService.streamChat(messages, model, options)
     } else if (provider === 'nvidia') {
-      stream = nvidiaService.streamChat(messages, model, apiKey || '', options)
+      const nvidiaKey = apiKey || process.env.NVIDIA_API_KEY || ''
+      stream = nvidiaService.streamChat(messages, model, nvidiaKey, options)
     } else {
       stream = ollamaService.streamChat(messages, model, options)
     }
 
     for await (const chunk of stream) {
-      if (chunk.content) {
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`)
+      let content: string | undefined
+      if (provider === 'ollama' && chunk.message?.content !== undefined) {
+        content = chunk.message.content
+      } else if ((provider === 'nvidia' || provider === 'airllm') && chunk.content !== undefined) {
+        content = chunk.content
       }
-      if (chunk.done) {
+
+      if (content !== undefined) {
+        reply.raw.write(`data: ${JSON.stringify({ content })}\n\n`)
+      }
+      
+      const isDone = (provider === 'ollama' && chunk.done) || 
+                     ((provider === 'nvidia' || provider === 'airllm') && chunk.done === true)
+                     
+      if (isDone) {
         reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`)
       }
     }
@@ -106,7 +120,9 @@ app.post('/delete', async (request, reply) => {
   const { provider, model } = request.body as any
   try {
     if (provider === 'ollama') {
-      const res = await fetch(`http://127.0.0.1:11434/api/delete`, {
+      const ollamaHost = process.env.OLLAMA_HOST || '127.0.0.1'
+      const ollamaPort = process.env.OLLAMA_PORT || '11434'
+      const res = await fetch(`http://${ollamaHost}:${ollamaPort}/api/delete`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: model })
@@ -128,7 +144,9 @@ app.post('/pull', async (request, reply) => {
   reply.raw.flushHeaders()
 
   try {
-    const res = await fetch(`http://127.0.0.1:11434/api/pull`, {
+    const ollamaHost = process.env.OLLAMA_HOST || '127.0.0.1'
+    const ollamaPort = process.env.OLLAMA_PORT || '11434'
+    const res = await fetch(`http://${ollamaHost}:${ollamaPort}/api/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: model, stream: true })
@@ -195,21 +213,19 @@ app.post('/worker/transcribeAudio', async (request, reply) => {
   return workerManager.transcribeAudio(pcmData, modelSize, language)
 })
 
-export async function startDaemon(port: number = 47392) {
+export async function startDaemon(port?: number) {
+  const daemonPort = port || parseInt(process.env.KURUMI_DAEMON_PORT || '47392', 10)
+  const daemonHost = process.env.KURUMI_DAEMON_HOST || '127.0.0.1'
+
   try {
     // Start child processes
     startSupervisedProcess('airllm')
     await ensureOllama()
     
-    await app.listen({ port, host: '127.0.0.1' })
-    logger.info(`Daemon listening on http://127.0.0.1:${port}`)
+    await app.listen({ port: daemonPort, host: daemonHost })
+    logger.info(`Kurumi daemon is listening at http://${daemonHost}:${daemonPort}`)
   } catch (err) {
     logger.error('Daemon failed to start', { error: err })
     process.exit(1)
   }
-}
-
-// If run directly
-if (require.main === module) {
-  startDaemon()
 }

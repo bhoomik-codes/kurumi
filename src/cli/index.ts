@@ -303,11 +303,14 @@ Usage:
   
   // Load directory-level instructions if present (Phase 0)
   const { findInstructions } = await import('./utils')
-  const systemInstructions = findInstructions()
+  const instructionResult = findInstructions()
 
   // We'll import and run the TUI here dynamically so we don't load React if just running CLI
   const { runTui } = await import('./tui')
-  runTui({ systemInstructions })
+  runTui({ 
+    systemInstructions: instructionResult?.content,
+    loadedInstructionFiles: instructionResult?.loadedFiles 
+  })
 }
 
 main().catch(err => {

@@ -2,8 +2,11 @@
 // Talks to the local AirLLM FastAPI server (airllm_server.py) running on port 8765.
 // Uses the OpenAI-compatible SSE streaming format — identical to NvidiaService.
 
-export const AIRLLM_BASE_URL = 'http://127.0.0.1:8765/v1'
-export const AIRLLM_ROOT_URL = 'http://127.0.0.1:8765'
+const airllmHost = process.env.AIRLLM_HOST || '127.0.0.1'
+const airllmPort = process.env.AIRLLM_PORT || '8765'
+
+export const AIRLLM_BASE_URL = `http://${airllmHost}:${airllmPort}/v1`
+export const AIRLLM_ROOT_URL = `http://${airllmHost}:${airllmPort}`
 
 export class AirLLMService {
   private abortController: AbortController | null = null

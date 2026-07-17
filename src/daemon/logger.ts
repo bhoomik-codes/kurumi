@@ -2,6 +2,9 @@ import os from 'os'
 import path from 'path'
 import winston from 'winston'
 import DailyRotateFile from 'winston-daily-rotate-file'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 function getConfigDir() {
   if (process.platform === 'win32') {
@@ -14,8 +17,21 @@ function getConfigDir() {
 }
 
 export const USER_DATA_PATH = getConfigDir()
-export const LOGS_DIR = path.join(USER_DATA_PATH, 'logs')
-export const DB_PATH = path.join(USER_DATA_PATH, 'kurumi.db')
+
+// Use environment variables or fallback to defaults
+const defaultLogsDir = path.join(USER_DATA_PATH, 'logs')
+const defaultDbPath = path.join(USER_DATA_PATH, 'kurumi.db')
+
+function resolvePath(envVar: string | undefined, defaultPath: string) {
+  if (!envVar) return defaultPath
+  if (envVar.startsWith('~/')) {
+    return path.join(os.homedir(), envVar.slice(2))
+  }
+  return path.resolve(envVar)
+}
+
+export const LOGS_DIR = resolvePath(process.env.KURUMI_LOG_DIR, defaultLogsDir)
+export const DB_PATH = resolvePath(process.env.KURUMI_DB_PATH, defaultDbPath)
 export const DAEMON_PID_FILE = path.join(USER_DATA_PATH, 'kurumid.pid')
 
 const logFormat = winston.format.combine(
@@ -28,7 +44,7 @@ const logFormat = winston.format.combine(
 )
 
 export const logger = winston.createLogger({
-  level: 'info',
+  level: process.env.KURUMI_LOG_LEVEL || 'info',
   format: logFormat,
   transports: [
     new DailyRotateFile({
@@ -47,7 +63,7 @@ export const logger = winston.createLogger({
 
 export function getChildLogger(processName: string) {
   return winston.createLogger({
-    level: 'info',
+    level: process.env.KURUMI_LOG_LEVEL || 'info',
     format: logFormat,
     transports: [
       new DailyRotateFile({

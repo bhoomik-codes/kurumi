@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 
-const DAEMON_URL = 'http://127.0.0.1:47392'
+import dotenv from 'dotenv';
+dotenv.config();
+const DAEMON_URL = `http://${process.env.KURUMI_DAEMON_HOST || '127.0.0.1'}:${process.env.KURUMI_DAEMON_PORT || '47392'}`
 
 export function registerAirLLMIpc() {
   ipcMain.handle('airllm:status', async () => {

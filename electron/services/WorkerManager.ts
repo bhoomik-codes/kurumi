@@ -1,6 +1,8 @@
 import type { VectorSearchResult } from './vectorStoreCore'
 
-const DAEMON_URL = 'http://127.0.0.1:47392'
+import dotenv from 'dotenv';
+dotenv.config();
+const DAEMON_URL = `http://${process.env.KURUMI_DAEMON_HOST || '127.0.0.1'}:${process.env.KURUMI_DAEMON_PORT || '47392'}`
 
 class WorkerManagerProxy {
   async runStartupHealthCheck(): Promise<{ ok: boolean; error?: string }> {
