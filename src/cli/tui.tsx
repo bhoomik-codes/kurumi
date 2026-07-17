@@ -1,55 +1,98 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { render, Box, Text } from 'ink'
-import TextInput from 'ink-text-input'
+import { render, Box, Text, useApp, useInput } from 'ink'
+import { Splash } from './components/Splash'
+import { Footer } from './components/Footer'
+import { InputArea } from './components/InputArea'
+import { MessageList, Message } from './components/MessageList'
 
-const DAEMON_URL = 'http://127.0.0.1:47392'
+const daemonPort = process.env.KURUMI_DAEMON_PORT || '47392'
+const daemonHost = process.env.KURUMI_DAEMON_HOST || '127.0.0.1'
+const DAEMON_URL = `http://${daemonHost}:${daemonPort}`
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
+interface TuiOptions {
+  systemInstructions?: string | null
 }
 
-const ChatApp = () => {
+const ChatApp = ({ systemInstructions }: TuiOptions) => {
+  const { exit } = useApp()
   const [messages, setMessages] = useState<Message[]>([])
-  const [query, setQuery] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
-  const [model, setModel] = useState('llama3:8b') // Default
+  const [model, setModel] = useState('llama3:8b')
   const [provider, setProvider] = useState('ollama')
+  const abortControllerRef = useRef<AbortController | null>(null)
+  
+  // Double Ctrl+C to exit logic
+  const [exitPresses, setExitPresses] = useState(0)
+  
+  useInput((char, key) => {
+    if (key.ctrl && char === 'c') {
+      if (exitPresses >= 1) {
+        exit()
+      } else {
+        setExitPresses(1)
+        setTimeout(() => setExitPresses(0), 1000) // Reset after 1s
+      }
+    } else {
+      setExitPresses(0)
+    }
+  })
 
-  const handleSubmit = async (val: string) => {
-    const text = val.trim()
-    if (!text) return
+  useEffect(() => {
+    if (systemInstructions) {
+      setMessages([{ role: 'system', content: systemInstructions }])
+    }
+  }, [systemInstructions])
 
+  const handleInterrupt = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsGenerating(false)
+    }
+  }
+
+  const handleSubmit = async (text: string) => {
     if (text === '/exit' || text === '/quit') {
-      process.exit(0)
+      exit()
+      return
     }
 
     if (text === '/clear') {
-      setMessages([])
-      setQuery('')
+      setMessages(systemInstructions ? [{ role: 'system', content: systemInstructions }] : [])
       return
     }
 
-    if (text.startsWith('/model ')) {
-      const newModel = text.slice(7).trim()
-      setModel(newModel)
-      setQuery('')
-      setMessages(m => [...m, { role: 'assistant', content: `Switched model to ${newModel}` }])
+    if (text === '/help') {
+      setMessages(m => [...m, 
+        { role: 'user', content: text },
+        { role: 'assistant', content: `**KURUMI Help**\n- \`/help\`: Show this message\n- \`/clear\`: Clear chat\n- \`/about\`: Show version\n- \`/quit\`: Exit\n- \`/models\`: (Coming soon)\n- \`@path\`: (Coming soon)\n- \`!cmd\`: (Coming soon)` }
+      ])
       return
     }
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: text }]
+    if (text === '/about') {
+      setMessages(m => [...m, 
+        { role: 'user', content: text },
+        { role: 'assistant', content: `KURUMI v1.0.0 — Cursed Blood Edition` }
+      ])
+      return
+    }
+
+    const newMessages = [...messages, { role: 'user', content: text } as Message]
     setMessages(newMessages)
-    setQuery('')
     setIsGenerating(true)
 
     // Add empty assistant message to append to
     setMessages(m => [...m, { role: 'assistant', content: '' }])
 
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
       const res = await fetch(`${DAEMON_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           provider,
           model,
@@ -90,56 +133,59 @@ const ChatApp = () => {
               if (parsed.done) {
                 break
               }
-            } catch { /* ignore parsing errors */ }
+            } catch { /* ignore */ }
           }
         }
       }
     } catch (err: any) {
-      setMessages(m => [...m, { role: 'assistant', content: `[Error: ${err.message}]` }])
+      if (err.name !== 'AbortError') {
+        setMessages(m => [...m, { role: 'assistant', content: `**[Error: ${err.message}]**` }])
+      } else {
+        setMessages(m => {
+          const updated = [...m]
+          const last = updated[updated.length - 1]
+          if (last && last.role === 'assistant') {
+            last.content += '\n\n*(Generation interrupted)*'
+          }
+          return updated
+        })
+      }
     } finally {
       setIsGenerating(false)
+      abortControllerRef.current = null
     }
   }
 
+  // Calculate context usage (dummy logic for now, Phase 2 will improve)
+  const ctxTokens = messages.reduce((acc, m) => acc + m.content.length / 4, 0)
+  const contextUsage = Math.min(100, Math.round((ctxTokens / 8192) * 100))
+
   return (
     <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text bold color="magenta">KURUMI</Text>
-        <Text color="gray"> - Connected to {model} via {provider}</Text>
-      </Box>
+      {messages.length <= (systemInstructions ? 1 : 0) && <Splash />}
 
-      <Box flexDirection="column" marginBottom={1}>
-        {messages.map((m, i) => (
-          <Box key={i} flexDirection="column" marginBottom={1}>
-            <Text bold color={m.role === 'user' ? 'blue' : 'green'}>
-              {m.role === 'user' ? 'You' : 'Kurumi'}
-            </Text>
-            <Text>{m.content}</Text>
-          </Box>
-        ))}
-        {messages.length === 0 && (
-          <Text color="gray">Type a message or use commands: /clear, /model &lt;name&gt;, /exit</Text>
-        )}
-      </Box>
+      <MessageList messages={messages} />
 
-      <Box>
-        <Box marginRight={1}>
-          <Text color="yellow">❯</Text>
-        </Box>
-        {isGenerating ? (
-          <Text color="gray">Generating...</Text>
-        ) : (
-          <TextInput
-            value={query}
-            onChange={setQuery}
-            onSubmit={handleSubmit}
-          />
-        )}
-      </Box>
+      {exitPresses > 0 && (
+        <Text color="yellow">Press Ctrl+C again to exit</Text>
+      )}
+
+      <InputArea 
+        onSubmit={handleSubmit} 
+        onInterrupt={handleInterrupt}
+        isGenerating={isGenerating}
+      />
+      
+      <Footer 
+        cwd={process.cwd()} 
+        provider={provider} 
+        model={model} 
+        contextUsage={contextUsage} 
+      />
     </Box>
   )
 }
 
-export function runTui() {
-  render(<ChatApp />)
+export function runTui(options: TuiOptions = {}) {
+  render(<ChatApp {...options} />)
 }

@@ -2,10 +2,13 @@ import mri from 'mri'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import { startDaemon } from '../daemon/server'
 import { DAEMON_PID_FILE, logger } from '../daemon/logger'
+import dotenv from 'dotenv'
+dotenv.config()
 
-const DAEMON_URL = 'http://127.0.0.1:47392'
+const daemonPort = process.env.KURUMI_DAEMON_PORT || '47392'
+const daemonHost = process.env.KURUMI_DAEMON_HOST || '127.0.0.1'
+const DAEMON_URL = `http://${daemonHost}:${daemonPort}`
 
 async function checkDaemonHealth(): Promise<boolean> {
   try {
@@ -23,11 +26,24 @@ async function ensureDaemon(): Promise<void> {
   console.log('Starting background daemon (kurumid)...')
   
   // Spawn detached so it survives CLI exit
-  const daemonScript = path.join(__dirname, '..', 'daemon', 'server.ts')
-  const child = spawn('npx', ['tsx', daemonScript], {
-    detached: true,
-    stdio: 'ignore'
-  })
+  const isPkg = typeof (process as any).pkg !== 'undefined'
+  
+  let child;
+  if (isPkg) {
+    // pkg's internal child_process.spawn wrapper treats any argument to process.execPath 
+    // as a module to require() (causing MODULE_NOT_FOUND errors). 
+    // Passing no arguments bypasses this and runs the main script.
+    child = spawn(process.execPath, [], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, KURUMID_SPAWN: '1' }
+    })
+  } else {
+    child = spawn(process.execPath, [process.argv[1], 'server'], {
+      detached: true,
+      stdio: 'ignore'
+    })
+  }
   child.unref() // Let it run independently
 
   // Wait for health endpoint
@@ -50,7 +66,7 @@ async function runAsk(query: string, raw: boolean) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       provider: 'ollama', // Default provider for CLI unless specified
-      model: 'llama3:8b', // Needs configurable default, hardcoded for now
+      model: 'gemma4:e4b', // Using available model
       messages: [{ role: 'user', content: query }]
     })
   })
@@ -146,7 +162,9 @@ async function runDoctor() {
   // 5. Backends Reachability
   process.stdout.write('Checking Ollama Backend... ')
   try {
-    const res = await fetch('http://127.0.0.1:11434')
+    const ollamaHost = process.env.OLLAMA_HOST || '127.0.0.1'
+    const ollamaPort = process.env.OLLAMA_PORT || '11434'
+    const res = await fetch(`http://${ollamaHost}:${ollamaPort}`)
     if (res.ok) console.log('\x1b[32mOK (reachable)\x1b[0m')
     else console.log('\x1b[31mERROR (reachable but returned non-200)\x1b[0m')
   } catch {
@@ -155,7 +173,9 @@ async function runDoctor() {
 
   process.stdout.write('Checking AirLLM Python Server... ')
   try {
-    const res = await fetch('http://127.0.0.1:8765/health', { signal: AbortSignal.timeout(2000) })
+    const airllmHost = process.env.AIRLLM_HOST || '127.0.0.1'
+    const airllmPort = process.env.AIRLLM_PORT || '8765'
+    const res = await fetch(`http://${airllmHost}:${airllmPort}/health`, { signal: AbortSignal.timeout(2000) })
     if (res.ok) console.log('\x1b[32mOK (reachable)\x1b[0m')
     else console.log('\x1b[31mERROR (reachable but returned non-200)\x1b[0m')
   } catch {
@@ -210,7 +230,7 @@ async function runSetup() {
     execSync(`${pyCmd} -m pip install -r ${path.join(rootDir, 'requirements-airllm.txt')}`, { stdio: 'inherit', cwd: rootDir })
     console.log(`      \x1b[32mDependencies installed successfully.\x1b[0m`)
   } catch (err: any) {
-    console.error(`\x1b[31mERROR: Failed to install Python dependencies.\x1b[0m`, err.message)
+    console.error(err)
     process.exit(1)
   }
 
@@ -228,6 +248,12 @@ async function runSetup() {
 }
 
 async function main() {
+  if (process.env.KURUMID_SPAWN) {
+    const { startDaemon } = await import('../daemon/server')
+    await startDaemon()
+    return
+  }
+
   const args = process.argv.slice(2)
   const parsed = mri(args, {
     boolean: ['help'],
@@ -238,6 +264,7 @@ async function main() {
 
   if (command === 'server') {
     // Run daemon in foreground
+    const { startDaemon } = await import('../daemon/server')
     await startDaemon()
     return
   }
@@ -273,12 +300,17 @@ Usage:
 
   // If no specific command and no --ask, launch the TUI
   await ensureDaemon()
+  
+  // Load directory-level instructions if present (Phase 0)
+  const { findInstructions } = await import('./utils')
+  const systemInstructions = findInstructions()
+
   // We'll import and run the TUI here dynamically so we don't load React if just running CLI
   const { runTui } = await import('./tui')
-  runTui()
+  runTui({ systemInstructions })
 }
 
 main().catch(err => {
-  console.error('\x1b[31mError:\x1b[0m', err.message)
+  console.error(err)
   process.exit(1)
 })

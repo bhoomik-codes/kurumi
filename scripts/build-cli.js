@@ -14,7 +14,8 @@ async function build() {
     external: [
       'better-sqlite3',
       'electron',
-      'ink', // Ink requires native modules / react stuff that is tricky to bundle, but pkg supports requiring it if included
+      'react-devtools-core', // Optional ink devtools, not needed at runtime
+      'yoga-layout-prebuilt'
     ],
     format: 'cjs'
   });
