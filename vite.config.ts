@@ -69,4 +69,17 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  test: {
+    // CLI and daemon tests use Node built-ins (fs, path, child_process) and must NOT
+    // run through vite-plugin-electron-renderer's browser shims. Use environment
+    // overrides to ensure they get a real Node environment.
+    environmentMatchGlobs: [
+      // Electron IPC and renderer tests → jsdom (default Vite behavior)
+      ['electron/**/*.test.{ts,tsx}', 'node'],
+      ['dist-electron/**/*.test.{js,ts}', 'node'],
+      // CLI / daemon / TUI tests → pure Node
+      ['src/cli/**/*.test.{ts,tsx}', 'node'],
+      ['src/daemon/**/*.test.{ts,tsx}', 'node'],
+    ],
+  },
 })

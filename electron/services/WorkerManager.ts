@@ -5,6 +5,15 @@ dotenv.config();
 const DAEMON_URL = `http://${process.env.KURUMI_DAEMON_HOST || '127.0.0.1'}:${process.env.KURUMI_DAEMON_PORT || '47392'}`
 
 class WorkerManagerProxy {
+  /**
+   * Ping the daemon's health endpoint to verify the worker is reachable.
+   * Used by voice.ipc.ts's voice:worker-ready handler to pre-warm the worker.
+   */
+  async ensureWorker(): Promise<void> {
+    const res = await fetch(`${DAEMON_URL}/health`, { signal: AbortSignal.timeout(3000) })
+    if (!res.ok) throw new Error('Daemon unreachable')
+  }
+
   async runStartupHealthCheck(): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await fetch(`${DAEMON_URL}/health`)

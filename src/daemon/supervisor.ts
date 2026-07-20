@@ -12,20 +12,27 @@ try {
   
   // Find the real path of airllm_server.py (next to executable when packaged, or in root when dev)
   const isPackaged = typeof process.pkg !== 'undefined' || process.argv[0].endsWith('kurumi-cli') || process.argv[0].endsWith('kurumi-cli.exe')
-  const baseDir = isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '..', '..')
+  
+  // Resolve base directory reliably:
+  // If packaged: directory of the executable
+  // If dev/Node: project root (where package.json and airllm_server.py reside)
+  const baseDir = isPackaged 
+    ? path.dirname(process.execPath) 
+    : path.resolve(__dirname, process.argv[1].includes('dist') ? '..' : '../..')
+
   const sourcePath = path.join(baseDir, 'airllm_server.py')
   
   if (fs.existsSync(sourcePath)) {
     const scriptContent = fs.readFileSync(sourcePath, 'utf-8')
     fs.writeFileSync(extractedAirLLMPath, scriptContent)
   } else {
-    // If running in dev from kurumi-electron/src/daemon
-    const devPath = path.join(__dirname, '..', '..', 'airllm_server.py')
-    if (fs.existsSync(devPath)) {
-       const scriptContent = fs.readFileSync(devPath, 'utf-8')
+    // Final fallback: try looking explicitly in the current working directory
+    const cwdPath = path.join(process.cwd(), 'airllm_server.py')
+    if (fs.existsSync(cwdPath)) {
+       const scriptContent = fs.readFileSync(cwdPath, 'utf-8')
        fs.writeFileSync(extractedAirLLMPath, scriptContent)
     } else {
-       console.error(`[Supervisor] Could not find airllm_server.py at ${sourcePath} or ${devPath}`)
+       console.error(`[Supervisor] Could not find airllm_server.py at ${sourcePath} or ${cwdPath}`)
     }
   }
 } catch (err) {

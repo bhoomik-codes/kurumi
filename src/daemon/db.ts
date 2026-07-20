@@ -1,12 +1,32 @@
+import path from 'path'
 import Database from 'better-sqlite3'
 import { DB_PATH, logger } from './logger'
+
+/**
+ * Resolve the better-sqlite3 native binding path.
+ *
+ * When running as a pkg-packaged binary (process.pkg is set), Node's module
+ * resolution for .node binaries looks inside the snapshot filesystem
+ * (/snapshot/...) — but native binaries cannot be snapshot-embedded. We copy
+ * the .node file next to the executable at build time and resolve it here
+ * using process.execPath so the daemon always finds it on the real filesystem.
+ *
+ * In dev / tsx mode (no process.pkg) we return undefined and let the normal
+ * bindings lookup handle it.
+ */
+function resolveSqliteBinding(): string | undefined {
+  if (!(process as any).pkg) return undefined
+  const execDir = path.dirname(process.execPath)
+  return path.join(execDir, 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node')
+}
 
 class DatabaseService {
   private db: Database.Database
 
   constructor() {
     logger.info(`Initializing SQLite database at: ${DB_PATH}`)
-    this.db = new Database(DB_PATH)
+    const nativeBinding = resolveSqliteBinding()
+    this.db = new Database(DB_PATH, nativeBinding ? { nativeBinding } : undefined)
     // Daemon is the single writer. WAL mode ensures concurrency for readers if ever needed,
     // though ideally all access goes through the daemon anyway.
     this.db.pragma('journal_mode = WAL')

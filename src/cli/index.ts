@@ -88,12 +88,18 @@ async function runAsk(query: string, raw: boolean) {
       if (line.startsWith('data: ')) {
         const data = line.slice(6).trim()
         if (data === '[DONE]') break
+        let parsed: any
         try {
-          const parsed = JSON.parse(data)
-          if (parsed.content) {
-            process.stdout.write(parsed.content)
-          }
-        } catch { /* ignore parsing errors */ }
+          parsed = JSON.parse(data)
+        } catch {
+          continue
+        }
+        
+        if (parsed.error) throw new Error(parsed.error)
+        
+        if (parsed.content) {
+          process.stdout.write(parsed.content)
+        }
       }
     }
   }
@@ -226,11 +232,17 @@ async function runSetup() {
   // 2. AirLLM dependencies
   console.log('\n[2/3] Installing AirLLM Python dependencies...')
   try {
-    const rootDir = path.join(__dirname, '..', '..')
-    execSync(`${pyCmd} -m pip install -r ${path.join(rootDir, 'requirements-airllm.txt')}`, { stdio: 'inherit', cwd: rootDir })
+    const { execSync } = require('child_process')
+    // We cannot use -r /snapshot/.../requirements.txt because pip cannot read pkg's virtual filesystem.
+    // We also cannot use cwd: rootDir because the OS will throw ENOENT for the virtual directory.
+    const packages = 'airllm>=3.0.1 fastapi>=0.111.0 "uvicorn[standard]>=0.30.0" pydantic>=2.0.0 httpx>=0.27.0'
+    const output = execSync(`${pyCmd} -m pip install ${packages}`, { stdio: 'pipe' })
+    console.log(output.toString())
     console.log(`      \x1b[32mDependencies installed successfully.\x1b[0m`)
   } catch (err: any) {
-    console.error(err)
+    if (err.stdout) console.log(err.stdout.toString())
+    if (err.stderr) console.error(err.stderr.toString())
+    console.error(`\x1b[31mERROR: Failed to install Python dependencies.\x1b[0m`)
     process.exit(1)
   }
 
@@ -300,7 +312,31 @@ Usage:
 
   // If no specific command and no --ask, launch the TUI
   await ensureDaemon()
-  
+
+  // Determine default model or install if none
+  let initialModel = 'llama3:8b'
+  let initialProvider = 'ollama'
+  try {
+    const res = await fetch(`${DAEMON_URL}/models`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data.ollama && data.ollama.length > 0) {
+        initialModel = data.ollama[0].name
+      } else if (data.airllm && data.airllm.length > 0) {
+        initialModel = data.airllm[0]
+        initialProvider = 'airllm'
+      } else if (data.nvidia && data.nvidia.length > 0) {
+        initialModel = data.nvidia[0].id
+        initialProvider = 'nvidia'
+      } else {
+        console.log('\x1b[33mNo models found. Installing default model (llama3:8b)...\x1b[0m')
+        execSync('ollama pull llama3:8b', { stdio: 'inherit' })
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
   // Load directory-level instructions if present (Phase 0)
   const { findInstructions } = await import('./utils')
   const instructionResult = findInstructions()
@@ -309,7 +345,10 @@ Usage:
   const { runTui } = await import('./tui')
   runTui({ 
     systemInstructions: instructionResult?.content,
-    loadedInstructionFiles: instructionResult?.loadedFiles 
+    loadedInstructionFiles: instructionResult?.loadedFiles,
+    warnings: instructionResult?.warnings,
+    initialModel,
+    initialProvider
   })
 }
 

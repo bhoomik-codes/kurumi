@@ -5,14 +5,13 @@ import TerminalRenderer from 'marked-terminal'
 
 marked.setOptions({
   renderer: new TerminalRenderer({
-    code: require('chalk').red,
     reflowText: true,
-    width: 80
-  })
+    width: process.stdout.columns ? Math.max(80, process.stdout.columns - 4) : 80
+  }) as any
 })
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'system-process'
   content: string
 }
 
@@ -26,15 +25,19 @@ export function MessageList({ messages }: MessageListProps) {
     <Box flexDirection="column" marginBottom={1}>
       {messages.filter(m => m.role !== 'system').map((m, i) => {
         const isUser = m.role === 'user'
-        const renderedContent = isUser ? m.content : marked.parse(m.content)
+        const isProcess = m.role === 'system-process'
+        const renderedContent = isUser || isProcess ? m.content : marked.parse(m.content)
         
         return (
-          <Box key={i} flexDirection="column" marginBottom={1}>
-            <Text bold color={isUser ? 'blue' : 'redBright'}>
-              {isUser ? 'You' : 'Kurumi'}
+          <Box key={i} flexDirection="column" marginBottom={1} 
+               borderStyle={isProcess ? "round" : undefined}
+               borderColor={isProcess ? "gray" : undefined}
+               paddingX={isProcess ? 1 : 0}>
+            <Text bold color={isUser ? 'blue' : (isProcess ? 'gray' : 'redBright')}>
+              {isUser ? 'You' : (isProcess ? 'System Process' : 'Kurumi')}
             </Text>
-            {isUser ? (
-              <Text>{renderedContent as string}</Text>
+            {isUser || isProcess ? (
+              <Text color={isProcess ? "gray" : undefined}>{renderedContent as string}</Text>
             ) : (
               // marked-terminal outputs strings with ANSI codes, Text handles it fine
               <Text>{(renderedContent as string).trim()}</Text>

@@ -4,12 +4,14 @@ import path from 'path'
 export interface InstructionsResult {
   content: string
   loadedFiles: string[]
+  warnings?: string[]
 }
 
 export function findInstructions(): InstructionsResult | null {
   let currentDir = process.cwd()
   let combined: string[] = []
   let loadedFiles: string[] = []
+  let warnings: string[] = []
   let seenRealPaths = new Set<string>()
 
   const loadFile = (filePath: string) => {
@@ -18,7 +20,16 @@ export function findInstructions(): InstructionsResult | null {
         const realPath = fs.realpathSync(filePath)
         if (!seenRealPaths.has(realPath)) {
           seenRealPaths.add(realPath)
-          combined.push(fs.readFileSync(realPath, 'utf8'))
+          
+          let priority = 'General'
+          if (filePath.includes('.kurumi/instructions.md')) {
+            priority = 'Highest - Kurumi Native Instructions'
+          } else if (filePath.toLowerCase().includes('claude.md')) {
+            priority = 'High - Compatibility Instructions'
+          }
+
+          const rawContent = fs.readFileSync(realPath, 'utf8')
+          combined.push(`[Priority: ${priority}]\n${rawContent}`)
           loadedFiles.push(filePath)
         }
       } catch (e) {}
@@ -33,7 +44,13 @@ export function findInstructions(): InstructionsResult | null {
     try {
       const files = fs.readdirSync(currentDir)
       const claudeFiles = files.filter(f => f.toLowerCase() === 'claude.md')
-      // Sort alphabetically for deterministic ordering in case of multiple distinct files
+      
+      // Warn if multiple distinct case variants exist in the same directory (Linux collision)
+      if (claudeFiles.length > 1) {
+        warnings.push(`Warning: Multiple case-variants of CLAUDE.md found in ${currentDir}. To ensure deterministic behavior, please consolidate to a single file.`)
+      }
+
+      // Sort alphabetically for deterministic ordering
       claudeFiles.sort()
       for (const claudeFile of claudeFiles) {
         loadFile(path.join(currentDir, claudeFile))
@@ -43,8 +60,14 @@ export function findInstructions(): InstructionsResult | null {
     if (combined.length > 0) {
       return {
         content: combined.join('\n\n---\n\n'),
-        loadedFiles
+        loadedFiles,
+        warnings
       }
+    }
+
+    // Boundary check: stop if we hit a .git directory (don't traverse past project roots)
+    if (fs.existsSync(path.join(currentDir, '.git'))) {
+      break
     }
 
     const parentDir = path.dirname(currentDir)

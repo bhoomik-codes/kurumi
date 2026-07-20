@@ -83,16 +83,18 @@ export function registerOllamaIpc() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.replace('data: ', '')
+            let data: any
             try {
-              const data = JSON.parse(dataStr)
-              if (data.error) throw new Error(data.error)
-              
-              event.sender.send(`ollama:chat:chunk:${replyId}`, data)
-              if (data.done) {
-                event.sender.send(`ollama:chat:done:${replyId}`, data)
-              }
+              data = JSON.parse(dataStr)
             } catch (e) {
-              // skip parse errors
+              continue // skip parse errors
+            }
+            
+            if (data.error) throw new Error(data.error)
+            
+            event.sender.send(`ollama:chat:chunk:${replyId}`, data)
+            if (data.done) {
+              event.sender.send(`ollama:chat:done:${replyId}`, data)
             }
           }
         }

@@ -87,7 +87,14 @@ export class OllamaService {
     })
 
     if (!response.ok) {
-      throw new Error(`Ollama HTTP Error: ${response.statusText}`)
+      let errText = response.statusText
+      try {
+        const errJson = await response.json()
+        if (errJson.error) errText = errJson.error
+      } catch (e) {
+        // ignore
+      }
+      throw new Error(`Ollama Error: ${errText}`)
     }
     
     if (!response.body) throw new Error('No response body')

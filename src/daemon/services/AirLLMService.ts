@@ -46,6 +46,21 @@ export class AirLLMService {
     }
   }
 
+  /**
+   * Attempt to warm up the AirLLM server by sending a zero-token probe.
+   * Returns true if the server is reachable, false otherwise.
+   */
+  async warmup(model: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${AIRLLM_ROOT_URL}/health`, {
+        signal: AbortSignal.timeout(5000),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
   abort() {
     if (this.abortController) {
       this.abortController.abort()

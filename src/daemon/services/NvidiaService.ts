@@ -80,27 +80,21 @@ export class NvidiaService {
         const SKIP_PATTERNS = ['embed', 'clip', 'vlm', 'vision', 'rerank', 'whisper', 'tts', 'coder', 'deplot', 'fuyu', 'bge-']
         const live = all
           .filter(m => !SKIP_PATTERNS.some(p => m.id.toLowerCase().includes(p)))
-          .map(m => ({ id: m.id, label: m.id.split('/')[1] ?? m.id, tag: m.id.split('/')[0], available: false }))
+          .map(m => ({ id: m.id, label: m.id.split('/')[1] ?? m.id, tag: m.id.split('/')[0], available: true }))
         // Merge: keep featured order, add any extra from live list
         const featuredIds = new Set(baseModels.map(m => m.id))
         const extras = live.filter(m => !featuredIds.has(m.id))
-        baseModels = [...baseModels.map(m => ({ ...m, available: false })), ...extras]
-        console.log(`[NVIDIA] ${baseModels.length} models to probe (${extras.length} extras from live list)`)
+        baseModels = [...baseModels.map(m => ({ ...m, available: true })), ...extras]
+        console.log(`[NVIDIA] Loaded ${baseModels.length} models (${extras.length} extras from live list)`)
       }
     } catch (err: any) {
       console.warn('[NVIDIA] Could not fetch live model list, using featured:', err.message)
-      baseModels = baseModels.map(m => ({ ...m, available: false }))
+      baseModels = baseModels.map(m => ({ ...m, available: true }))
     }
 
-    // Probe all models in parallel for availability
-    console.log(`[NVIDIA] Probing ${baseModels.length} models in parallel (6s timeout each)…`)
-    const probeResults = await Promise.all(
-      baseModels.map(m => this.probeModel(m.id, apiKey))
-    )
-    const result = baseModels.map((m, i) => ({ ...m, available: probeResults[i] }))
-    const availCount = result.filter(m => m.available).length
-    console.log(`[NVIDIA] Probe complete — ${availCount}/${result.length} models available`)
-    return result
+    // Lazy load: skip the eager 101 HTTP requests on boot.
+    // We assume models are available if they appear in the /models list.
+    return baseModels
   }
 
   abort() {

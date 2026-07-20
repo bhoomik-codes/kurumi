@@ -229,3 +229,8 @@ export async function startDaemon(port?: number) {
     process.exit(1)
   }
 }
+
+// Auto-start if run directly via tsx in dev
+if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWith('server.ts')) {
+  startDaemon()
+}

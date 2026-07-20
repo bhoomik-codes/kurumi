@@ -35,8 +35,16 @@ async function ensureDaemon(): Promise<void> {
   const daemonScript = path.join(__dirname, '..', 'src', 'daemon', 'server.ts')
   const child = spawn('npx', ['tsx', daemonScript], {
     detached: true,
-    stdio: 'ignore'
+    stdio: ['ignore', 'pipe', 'pipe']
   })
+  
+  child.stderr.on('data', (data) => {
+    console.error(`[Daemon STDERR]: ${data.toString()}`)
+  })
+  child.stdout.on('data', (data) => {
+    console.log(`[Daemon STDOUT]: ${data.toString()}`)
+  })
+  
   child.unref()
 
   for (let i = 0; i < 20; i++) {
@@ -117,6 +125,20 @@ async function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // Screenshot logic for artifact capture
+  mainWindow.webContents.on('did-finish-load', () => {
+    setTimeout(async () => {
+      try {
+        if (!mainWindow) return
+        const image = await mainWindow.webContents.capturePage()
+        require('fs').writeFileSync('/home/bixpurr/.gemini/antigravity-ide/brain/36b57f31-e440-40cc-83af-0c9336c41500/kurumi_gui_screenshot.png', image.toPNG())
+        console.log('Saved screenshot artifact!')
+      } catch (e) {
+        console.error('Failed to save screenshot:', e)
+      }
+    }, 2000)
   })
 }
 

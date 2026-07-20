@@ -4,9 +4,9 @@ import { dbService } from '../services/DatabaseService'
 import { workerManager } from '../services/WorkerManager'
 
 export function registerRagIpc() {
-  ipcMain.handle('docs:hasChunks', () => {
+  ipcMain.handle('docs:hasChunks', async () => {
     try {
-      const row = dbService.get(
+      const row = await dbService.get(
         `SELECT COUNT(*) as count FROM documents WHERE status = 'indexed' AND COALESCE(chunk_count, 0) > 0`
       ) as { count: number }
       return row.count > 0

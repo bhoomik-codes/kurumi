@@ -94,12 +94,10 @@ export default function Chat() {
         setActiveModel(savedDefault ?? models[0].name)
       }
 
-      // Load NVIDIA models if key is stored (probes availability in parallel)
+      // Load NVIDIA models if key is stored
       const savedKey = await window.electron?.invoke('settings:get', 'nvidiaApiKey') as string | null
       if (savedKey) {
-        setNvidiaProbing(true)
         const nModels = await window.electron?.invoke('nvidia:models', savedKey)
-        setNvidiaProbing(false)
         if (nModels?.length) {
           setNvidiaModels(nModels)
           const savedNvModel = await window.electron?.invoke('settings:get', 'nvidiaActiveModel') as string | null
